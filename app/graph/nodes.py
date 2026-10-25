@@ -12,6 +12,8 @@ from app.graph.routing import INTENT_TO_ROUTE
 from app.core.prompts import SCRIPT_REPLY_CHITCHAT, SCRIPT_REPLY_OTHER, COMPLAINT_REPLY_TEXT
 from app.core import coref, memory
 TURN_CTX_ID = "turn-ctx"
+from langgraph.types import interrupt
+from app.tools import engine, registry
 
 def _user_text(state) -> str:
     for m in reversed(state.get("messages", [])):
@@ -150,7 +152,33 @@ async def complaint_reply(state) -> dict:
 
 async def main_agent(state) -> dict:
     model = get_chat_model(streaming=True)
+    specs = await registry.get_all_specs()
+    if specs:
+        model = get_chat_model(streaming=not needs_non_streaming_tools())
+        model = model.bind_tools([{"name": spec.name, "description": spec.description, "parameters": spec.json_schema} for spec in specs])
     response = await model.ainvoke(_agent_messages(state))
     usage = getattr(response, "usage_metadata", None) or {}
     return {"messages": [response], "steps": state.get("steps", 0) + 1,
             "tokens_used": state.get("tokens_used", 0) + int(usage.get("total_tokens") or 0)}
+
+async def agent_tools(state) -> dict:
+    specs = {spec.name: spec for spec in await registry.get_all_specs()}
+    calls = getattr(state["messages"][-1], "tool_calls", [])
+    messages, actions = [], []
+    for call in calls:
+        spec = specs.get(call.get("name"))
+        confirmed = False
+        if spec is not None and spec.permission == "write":
+            error = engine.validate_args(spec, dict(call.get("args") or {}))
+            if error is None:
+                if call["name"] == "submit_change":
+                    args = call.get("args") or {}
+                    actions.append({"type": "create_change", "draft": {"service_id": args.get("service_id", ""), "change_type": args.get("change_type")}})
+                    messages.append(ToolMessage(content="变更申请需用户填写表单并确认提交。", tool_call_id=call["id"], name=call["name"]))
+                    continue
+                answer = interrupt({"type": "confirm_ticket", "preview": {"tool_name": call["name"], **dict(call.get("args") or {})}})
+                confirmed = isinstance(answer, dict) and answer.get("confirmed") is True
+        result = await engine.execute_tool_call(call, state["conversation_id"], specs,
+                                               confirmed=confirmed, user_id=state.get("user_id", ""))
+        messages.append(result.tool_message)
+    return {"messages": messages, "suggested_actions": actions}

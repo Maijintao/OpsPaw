@@ -184,3 +184,9 @@ async def insert_tool_audit(
             error_message=error_message, retry_count=retry_count, duration_ms=duration_ms,
         ))
         await s.commit()
+
+
+async def list_targets() -> list[Target]:
+    async with db.async_session() as s:
+        rows = (await s.execute(select(Target).order_by(Target.id))).scalars().all()
+        return list(rows)
