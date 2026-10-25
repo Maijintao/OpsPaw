@@ -9,6 +9,8 @@ from app.graph import runtime
 from app.api.chat import router as chat_router
 from app.api.agent import router as agent_router
 from app.api.conversations import router as conversations_router
+from app.api.tools import router as tools_router
+from app.tools import registry
 
 
 @asynccontextmanager
@@ -16,6 +18,7 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await runtime.init_graph()
+    registry.scan_builtin()
     try:
         yield
     finally:
@@ -27,6 +30,7 @@ app = FastAPI(title="OpsPaw", version="0.1.0", lifespan=lifespan)
 app.include_router(chat_router)
 app.include_router(agent_router)
 app.include_router(conversations_router)
+app.include_router(tools_router)
 
 _STATIC = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=_STATIC), name="static")
