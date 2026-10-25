@@ -10,7 +10,9 @@ def build_graph(checkpointer=None):
     builder.add_node("classify_intent", nodes.classify_intent)
     builder.add_node("script_reply", nodes.script_reply)
     builder.add_node("complaint_reply", nodes.complaint_reply)
-    builder.add_edge(START, "classify_intent")
+    builder.add_node("resolve_reference", nodes.resolve_reference)
+    builder.add_edge(START, "resolve_reference")
+    builder.add_edge("resolve_reference", "classify_intent")
     builder.add_conditional_edges("classify_intent", route_by_intent, {
         "escalate": "complaint_reply", "fallback_script": "script_reply",
         "knowledge": "main_agent", "change_flow": "main_agent", "service_ops": "main_agent"})
