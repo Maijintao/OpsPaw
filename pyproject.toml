@@ -1,0 +1,9 @@
+[project]
+name = "opspaw"
+version = "0.1.0"
+description = "OpsPaw application skeleton"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.139.0",
+    "uvicorn[standard]>=0.51.0",
+]
