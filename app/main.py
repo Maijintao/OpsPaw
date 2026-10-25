@@ -5,15 +5,18 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from app.db.base import Base, engine
 from app.db import models
+from app.graph import runtime
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await runtime.init_graph()
     try:
         yield
     finally:
+        await runtime.close_graph()
         await engine.dispose()
 
 
