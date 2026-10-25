@@ -79,6 +79,38 @@ INTENT_CLASSIFY_PROMPT = ChatPromptTemplate.from_messages(
      ("human", "最近对话(可空):\n{history}\n\n当前值班同学这句话:{query}")]
 )
 
+
+SUMMARY_SYSTEM = """## 角色
+你是值班对话摘要器。把早期的值班对话压成简洁摘要,供后续轮次当上下文用。
+
+## 规则
+- 只提炼事实与诉求:问过哪个服务、报过的服务名/报错信息、值班同学的明确诉求、还没解决的问题
+- 对话里没出现的内容一个字不许编;寒暄闲聊不留
+- 已有旧摘要时,把旧摘要与新对话合并成一份;旧摘要里的服务名、报错关键字等事实不得丢
+- 长度几十到一两百字
+- 严格输出 JSON:{{"summary": "string"}}"""
+
+
+SUMMARY_PROMPT = ChatPromptTemplate.from_messages(
+    [("system", SUMMARY_SYSTEM),
+     ("human", "旧摘要:{old_summary}\n\n需要并入摘要的对话:\n{dialog}")]
+)
+
+
+TITLE_SYSTEM = """## 角色
+你是会话标题生成器。根据一段对话,起一个能让值班工程师在侧栏一眼认出这轮事的小标题。
+
+## 规则
+- 4~10 个字,中文,不加标点、不加引号、不加"会话/关于"这类废话前缀
+- 抓核心事项:如「网关 5xx 排查」「服务回滚申请」「磁盘告警处理」
+- 内容太散就概括主题,对话里没出现的内容不许编
+- 严格输出 JSON:{{"title": "string"}}"""
+
+
+TITLE_PROMPT = ChatPromptTemplate.from_messages(
+    [("system", TITLE_SYSTEM), ("human", "对话:\n{dialog}")]
+)
+
 EXTRACT_SYSTEM = """你是运维工单提取器。从用户对故障或诉求的描述中提取结构化字段:
 - service_id:服务标识,填原文里明确出现的服务名(如 cartservice 这种写法,以服务目录的写法为准),
   仅当原文明确出现时提取,禁止编造或补全。

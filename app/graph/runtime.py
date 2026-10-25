@@ -7,6 +7,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command
 
 from app.config import settings
+from app.core import summarizer, titler
 from app.db import repository
 from app.graph.build import build_graph
 
@@ -152,6 +153,8 @@ async def run_turn(user_id, message, conversation_id) -> dict:
     config = {"configurable": {"thread_id": str(cid)}}
     final = await get_graph().ainvoke(
         _graph_input(user_id, message, cid, msg_id, summary, upto), config)
+    await summarizer.maybe_schedule_summary(cid)   # ch07 轮后触发检查(后台跑,不阻塞返回)
+    await titler.maybe_schedule_title(cid)
     return {"conversation_id": cid, "state": final, "interrupt": _interrupt_payload(final)}
 
 
@@ -162,6 +165,8 @@ async def resume_turn(conversation_id: int, resume_value) -> dict:
     config = {"configurable": {"thread_id": str(conversation_id)},
               "metadata": {"langfuse_session_id": str(conversation_id)}}
     final = await get_graph().ainvoke(Command(resume=resume_value), config)
+    await summarizer.maybe_schedule_summary(conversation_id)
+    await titler.maybe_schedule_title(conversation_id)
     return {"conversation_id": conversation_id, "state": final,
             "interrupt": _interrupt_payload(final)}
 
@@ -222,6 +227,8 @@ async def _drive_turn(cid: int, stream_source, q: asyncio.Queue) -> None:
         async with _TURN_LOCKS.setdefault(cid, asyncio.Lock()):
             async for ev in _stream_events(cid, stream_source):
                 await q.put(ev)
+        await summarizer.maybe_schedule_summary(cid)
+        await titler.maybe_schedule_title(cid)
     except Exception:  # noqa: BLE001
         logger.exception("流式轮次失败 conv=%s", cid)
         await q.put({"type": "error", "message": "上游模型暂时不可用,请稍后重试"})

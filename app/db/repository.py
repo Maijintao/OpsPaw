@@ -76,6 +76,18 @@ async def create_ticket(conversation_id: int, description: str, ticket_type: str
     return ticket_no
 
 
+async def count_messages_after(conversation_id: int, after_id: int | None) -> int:
+    """距上次摘要新增了多少条(after_id 空 = 从未摘要,数全量)。摘要触发判据。
+    注:此处数全角色,摘要源 list_dialog_messages 只取 user/assistant——当前一致
+    (tool 不落库);若未来 tool 行落库,两处口径需同步收紧。"""
+    async with db.async_session() as s:
+        q = (select(func.count()).select_from(Message)
+             .where(Message.conversation_id == conversation_id))
+        if after_id:
+            q = q.where(Message.id > after_id)
+        return int((await s.execute(q)).scalar_one())
+
+
 async def list_dialog_messages(conversation_id: int) -> list[Message]:
     """user/assistant 消息按 id 升序(摘要任务源数据;tool 行不落库,过滤一道保险)。"""
     async with db.async_session() as s:
@@ -138,3 +150,13 @@ async def delete_conversation(conversation_id: int) -> bool:
         await s.delete(conv)
         await s.commit()
         return True
+
+
+async def update_conversation_summary(conversation_id: int, summary: str, upto_msg_id: int) -> None:
+    """摘要成功后原子更新两字段(一起写,不会出现摘要新边界旧)。"""
+    async with db.async_session() as s:
+        conv = await s.get(Conversation, conversation_id)
+        if conv is not None:
+            conv.summary = summary
+            conv.summary_upto_msg_id = upto_msg_id
+            await s.commit()
