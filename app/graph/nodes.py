@@ -52,7 +52,13 @@ async def log_node(state) -> dict:
         # 引用本身是模型输出的一部分,和正文一起落库才自洽。
         actions = state.get("suggested_actions") or None
         cites = state.get("citations") or None
-        meta: dict = {}
+        tool_names = []
+        for message in reversed(state.get("messages", [])):
+            if isinstance(message, HumanMessage):
+                break
+            if isinstance(message, ToolMessage) and message.name:
+                tool_names.append(message.name)
+        meta: dict = {"tools": list(reversed(tool_names))} if tool_names else {}
         if actions:
             meta["suggested_actions"] = actions
         if cites:
@@ -168,7 +174,7 @@ async def agent_tools(state) -> dict:
     for call in calls:
         spec = specs.get(call.get("name"))
         confirmed = False
-        if spec is not None and spec.permission == "write":
+        if spec is not None and (spec.permission == "write" or call.get("name") == "submit_change"):
             error = engine.validate_args(spec, dict(call.get("args") or {}))
             if error is None:
                 if call["name"] == "submit_change":

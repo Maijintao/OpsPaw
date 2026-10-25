@@ -41,5 +41,9 @@ app.mount("/static", StaticFiles(directory=_STATIC), name="static")
 async def chat_page():
     return FileResponse(_STATIC / "index.html")
 
+@app.get("/tools", include_in_schema=False)
+async def tools_page():
+    return FileResponse(_STATIC / "tools.html")
+
 from app.api.extract import router as extract_router
 app.include_router(extract_router)

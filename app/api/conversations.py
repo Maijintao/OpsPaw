@@ -33,6 +33,7 @@ async def list_messages(conversation_id: int):
         {"role": m.role, "content": m.content or "",
          # meta.suggested_actions 回传给前端重建动作卡(诊断卡/服务卡/按钮),不回传会丢
          "actions": ((m.meta or {}).get("suggested_actions")) or None,
+         "tools": ((m.meta or {}).get("tools")) or None,
          # 引用角标 [n] 的原始出处:不回传的话回载后只剩纯文本 "[1]",
          # 既没有珊瑚色上标样式,也点不出来源浮层(直播时有、刷新就没)
          "citations": ((m.meta or {}).get("citations")) or None,
