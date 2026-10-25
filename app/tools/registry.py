@@ -94,5 +94,18 @@ def get_builtin_spec(name: str) -> ToolSpec | None:
 
 
 async def get_all_specs() -> list[ToolSpec]:
-    """读取当前已注册的内置工具。"""
-    return builtin_specs()
+    """内置 + MCP 现拉合并;重名 builtin 优先、后到丢弃告警(本章无重名:监控/日志工具均由 MCP 提供)。
+
+    返回顺序必须稳定,别改成 set 或加 sorted:tools 定义跟 system 一样在模型请求的可缓存
+    前缀里,顺序抖一下前缀就整段 miss。现在的顺序由三件事保证——scan_builtin 走的 pkgutil
+    内部有 filenames.sort()、_BUILTIN 与 merged 都是 dict(保插入序)、_connections() 是字面量
+    dict。真会让它变的是 MCP Server 不可达跳过或 Server 侧热加工具,那是「现问现拿」的固有
+    代价,排序治不了。"""
+    from app.tools import mcp_client   # 延迟导入避免环(mcp_client 也 import registry)
+    merged: dict[str, ToolSpec] = {s.name: s for s in builtin_specs()}
+    for s in await mcp_client.fetch_mcp_specs():
+        if s.name in merged:
+            logger.warning("MCP 工具与已注册工具重名,丢弃 name=%s server=%s", s.name, s.mcp_server)
+            continue
+        merged[s.name] = s
+    return list(merged.values())
