@@ -28,5 +28,12 @@ app.include_router(chat_router)
 app.include_router(agent_router)
 app.include_router(conversations_router)
 
+_STATIC = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=_STATIC), name="static")
+
+@app.get("/", include_in_schema=False)
+async def chat_page():
+    return FileResponse(_STATIC / "index.html")
+
 from app.api.extract import router as extract_router
 app.include_router(extract_router)
