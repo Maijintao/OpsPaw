@@ -74,3 +74,67 @@ async def create_ticket(conversation_id: int, description: str, ticket_type: str
             conv.status = "已转人工"
         await s.commit()
     return ticket_no
+
+
+async def list_dialog_messages(conversation_id: int) -> list[Message]:
+    """user/assistant 消息按 id 升序(摘要任务源数据;tool 行不落库,过滤一道保险)。"""
+    async with db.async_session() as s:
+        result = await s.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id,
+                   Message.role.in_(("user", "assistant")))
+            .order_by(Message.id)
+        )
+        return list(result.scalars())
+
+
+async def list_conversations(user_id: str, limit: int = 50) -> list[dict]:
+    """某用户的会话列表(新在前,带首问预览 + 有无摘要标记),前端多会话切换用。"""
+    async with db.async_session() as s:
+        convs = list((await s.execute(
+            select(Conversation).where(Conversation.user_id == user_id)
+            .order_by(Conversation.id.desc()).limit(limit)
+        )).scalars())
+        out = []
+        for c in convs:
+            first = (await s.execute(
+                select(Message.content)
+                .where(Message.conversation_id == c.id, Message.role == "user")
+                .order_by(Message.id).limit(1)
+            )).scalar()
+            out.append({
+                "id": c.id, "status": c.status,
+                "title": c.title,
+                "preview": (first or "(空会话)")[:40],
+                "has_summary": bool(c.summary),
+                "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+            })
+        return out
+
+
+async def update_conversation_title(conversation_id: int, title: str) -> None:
+    """会话小标题生成成功后落库(只写一次,已有值不覆盖)。"""
+    async with db.async_session() as s:
+        conv = await s.get(Conversation, conversation_id)
+        if conv is not None and not conv.title:
+            conv.title = title
+            await s.commit()
+
+
+async def delete_conversation(conversation_id: int) -> bool:
+    """删除会话及其内容本体(messages/tickets)。两类关联行不删只摘引用:
+    tool_audit_logs(审计必须留痕,无 FK 本可悬空,摘成 NULL 免得 join 出错数据)与
+    low_confidence_questions(飞轮池子是资产,不随会话蒸发)。LangGraph checkpointer
+    的线程状态另在 runtime.delete_thread 清,这里只管主库。"""
+    async with db.async_session() as s:
+        conv = await s.get(Conversation, conversation_id)
+        if conv is None:
+            return False
+        await s.execute(delete(Message).where(Message.conversation_id == conversation_id))
+        await s.execute(delete(Ticket).where(Ticket.conversation_id == conversation_id))
+        await s.execute(update(ToolAuditLog)
+                        .where(ToolAuditLog.conversation_id == conversation_id)
+                        .values(conversation_id=None))
+        await s.delete(conv)
+        await s.commit()
+        return True
