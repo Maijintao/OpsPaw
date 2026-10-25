@@ -7,6 +7,9 @@ from app.core.prompts import AGENT_SYSTEM
 from app.db import repository
 
 logger = logging.getLogger(__name__)
+from app.core import intent as intent_mod
+from app.graph.routing import INTENT_TO_ROUTE
+from app.core.prompts import SCRIPT_REPLY_CHITCHAT, SCRIPT_REPLY_OTHER, COMPLAINT_REPLY_TEXT
 
 def _user_text(state) -> str:
     for m in reversed(state.get("messages", [])):
@@ -61,6 +64,22 @@ def _history_text(state) -> str:
 
 def _agent_messages(state) -> list:
     return [SystemMessage(AGENT_SYSTEM), *state.get("messages", [])]
+
+async def classify_intent(state) -> dict:
+    query = state.get("resolved_query") or _user_text(state)
+    result = await intent_mod.classify(query, _history_text(state))
+    route = "service_ops" if result.get("error") else INTENT_TO_ROUTE.get(result["intent"], "service_ops")
+    trace = {"intent": result["intent"], "intent_confidence": result["confidence"], "route": route}
+    if result.get("error"):
+        trace["intent_error"] = result["error"]
+    return {"intent": result["intent"], "intent_confidence": result["confidence"], "route": route, "trace": trace}
+
+async def script_reply(state) -> dict:
+    answer = SCRIPT_REPLY_OTHER if state.get("intent") == "其他" else SCRIPT_REPLY_CHITCHAT
+    return {"answer": answer}
+
+async def complaint_reply(state) -> dict:
+    return {"answer": COMPLAINT_REPLY_TEXT}
 
 async def main_agent(state) -> dict:
     model = get_chat_model(streaming=True)
