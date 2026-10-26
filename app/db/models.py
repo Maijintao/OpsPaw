@@ -110,6 +110,27 @@ class RepairEnrollmentToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+
+class RepairConnector(Base):
+    """修复连接器:甲方机器上跑的那一个,一个平台可以挂多个(多宿主机/多控制面)。
+
+    身份是"平台 + 连接器":写操作必须指明是哪一个,不能靠"这个平台随便挑一台"。
+    secret_hash 与注册令牌分开存——连接器上线后用自己的密钥说话,令牌不再复用。"""
+    __tablename__ = "repair_connectors"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    target_id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(16), server_default="online")  # online/offline/revoked
+    secret_hash: Mapped[str] = mapped_column(String(64))
+    capabilities: Mapped[list] = mapped_column(JSON, default=list)
+    host_info: Mapped[dict] = mapped_column(JSON, default=dict)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class DiagnosisRun(Base):
     """根因分析任务存档:诊断层 v0 的 run 只存内存,进程重启卡片就查无此单。
     落库后聊天卡片历史回放/刷新/跨天都能拿到完整结论;终态才写库(进行中的轮询走内存)。"""

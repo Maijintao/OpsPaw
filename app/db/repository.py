@@ -489,4 +489,69 @@ async def mark_enrollment_used(token_id: str) -> None:
 async def ensure_repair_tables() -> None:
     """创建当前已接入的注册令牌表。"""
     async with db.engine.begin() as conn:
-        await conn.run_sync(lambda c: RepairEnrollmentToken.__table__.create(c, checkfirst=True))
+        await conn.run_sync(lambda c: RepairEnrollmentToken.__table__.create(c, checkfirst=True)
+        RepairConnector.__table__.create(c, checkfirst=True))
+
+
+async def create_repair_connector(connector_id: str, target_id: int, name: str,
+                                  secret_hash: str, capabilities: list,
+                                  host_info: dict) -> None:
+    async with db.async_session() as s:
+        s.add(RepairConnector(id=connector_id, target_id=target_id, name=name,
+                              status="online", secret_hash=secret_hash,
+                              capabilities=capabilities, host_info=host_info,
+                              last_seen_at=datetime.now(),
+                              created_at=datetime.now()))
+        await s.commit()
+
+
+async def get_repair_connector(connector_id: str) -> RepairConnector | None:
+    async with db.async_session() as s:
+        return await s.get(RepairConnector, connector_id)
+
+
+async def list_repair_connectors(target_id: int | None = None) -> list[RepairConnector]:
+    async with db.async_session() as s:
+        stmt = select(RepairConnector).order_by(RepairConnector.created_at)
+        if target_id is not None:
+            stmt = stmt.where(RepairConnector.target_id == target_id)
+        return list((await s.execute(stmt)).scalars().all())
+
+
+async def touch_repair_connector(connector_id: str, capabilities: list | None = None,
+                                 host_info: dict | None = None) -> None:
+    """心跳:刷新最后在线时间;能力清单以连接器最近一次上报为准(它升级了适配器要能反映出来)。"""
+    async with db.async_session() as s:
+        row = await s.get(RepairConnector, connector_id)
+        if row is None:
+            return
+        row.last_seen_at = datetime.now()
+        if row.status != "revoked":
+            row.status = "online"
+        if capabilities is not None:
+            row.capabilities = capabilities
+        if host_info is not None:
+            row.host_info = host_info
+        await s.commit()
+
+
+async def revoke_repair_connector(connector_id: str) -> bool:
+    async with db.async_session() as s:
+        row = await s.get(RepairConnector, connector_id)
+        if row is None:
+            return False
+        row.status = "revoked"
+        row.revoked_at = datetime.now()
+        await s.commit()
+        return True
+
+
+async def delete_repair_connectors_of_target(target_id: int) -> None:
+    """断开平台时一并清掉它的连接器记录(令牌随平台失效,不留悬空身份)。
+    计划和执行记录保留:那是审计账,不跟着配置一起删。"""
+    async with db.async_session() as s:
+        await s.execute(delete(RepairConnector).where(RepairConnector.target_id == target_id))
+        await s.execute(delete(RepairEnrollmentToken)
+                        .where(RepairEnrollmentToken.target_id == target_id))
+        await s.commit()
+
