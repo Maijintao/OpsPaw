@@ -61,3 +61,8 @@ app.include_router(targets_router)
 
 from app.api.grafana import router as grafana_router
 app.include_router(grafana_router)
+
+
+@app.get("/platforms", include_in_schema=False)
+async def platforms_page():
+    return FileResponse(_STATIC / "platforms.html")
