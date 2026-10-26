@@ -144,6 +144,11 @@ def _turn_context(state) -> str:
 async def classify_intent(state) -> dict:
     query = state.get("resolved_query") or _user_text(state)
     result = await intent_mod.classify(query, _history_text(state))
+    try:
+        from app.core.observability import tag_intent
+        tag_intent(result.get("intent", "其他"), float(result.get("confidence") or 0))
+    except Exception:  # noqa: BLE001  可观测性不可影响对话
+        logger.debug("意图标注失败", exc_info=True)
     route = "service_ops" if result.get("error") else INTENT_TO_ROUTE.get(result["intent"], "service_ops")
     trace = {"intent": result["intent"], "intent_confidence": result["confidence"], "route": route}
     if result.get("error"):

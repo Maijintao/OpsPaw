@@ -23,4 +23,5 @@ def build_graph(checkpointer=None):
     builder.add_conditional_edges("main_agent", should_continue, {"continue": "agent_tools", "stop": "log"})
     builder.add_edge("agent_tools", "main_agent")
     builder.add_edge("log", END)
-    return builder.compile(checkpointer=checkpointer)
+    from app.core.observability import attach_observability
+    return attach_observability(builder.compile(checkpointer=checkpointer))

@@ -19,6 +19,10 @@ from app.api.sentinels import start_scheduler as start_sentinel_scheduler
 from app.api.sentinels import stop_scheduler as stop_sentinel_scheduler
 from app.api.sentinels import router as sentinels_router
 from app.api.incidents import router as incidents_router
+from app.api.admin import router as admin_router
+from app.api.jobs import router as jobs_router
+from app.api.observability import router as observability_router
+from app.api.settings import router as settings_router
 
 
 @asynccontextmanager
@@ -57,6 +61,10 @@ app.include_router(actions_router)
 app.include_router(repair_router)
 app.include_router(sentinels_router)
 app.include_router(incidents_router)
+app.include_router(admin_router)
+app.include_router(jobs_router)
+app.include_router(observability_router)
+app.include_router(settings_router)
 
 _STATIC = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=_STATIC), name="static")
@@ -108,3 +116,13 @@ async def incident_page(iid: int) -> FileResponse:
 @app.get("/alerts", include_in_schema=False)
 async def alerts_page() -> FileResponse:
     return FileResponse(_STATIC / "alerts.html")
+
+
+@app.get("/admin", include_in_schema=False)
+async def admin_page() -> FileResponse:
+    return FileResponse(_STATIC / "admin.html")
+
+
+@app.get("/observability", include_in_schema=False)
+async def observability_page() -> FileResponse:
+    return FileResponse(_STATIC / "observability.html")
