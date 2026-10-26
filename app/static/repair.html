@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpsPaw · 修复回执详情</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'><rect x='2' y='2' width='4' height='4' fill='%232b2632'/><rect x='10' y='2' width='4' height='4' fill='%232b2632'/><rect x='2' y='4' width='12' height='9' fill='%232b2632'/><rect x='3' y='3' width='2' height='3' fill='%23ff9f57'/><rect x='11' y='3' width='2' height='3' fill='%23ff9f57'/><rect x='3' y='5' width='10' height='7' fill='%23ff9f57'/><rect x='5' y='7' width='1' height='2' fill='%232b2632'/><rect x='10' y='7' width='2' height='1' fill='%23ff8095'/></svg>" />
+  <style>
+    /* 同 diagnosis.html 全局一套:配色/边框/阴影/网格,不另起炉灶 */
+    :root {
+      --ink: #2b2632;
+      --fur: #ff9f57;
+      --coral: #ff7a59;
+      --cream: #fff6e6;
+      --paper: #fffaf0;
+      --muted: #9b8f86;
+      --error: #d6455a;
+      --online: #5fcf6a;
+      --shadow: 4px 4px 0 var(--ink);
+      --shadow-sm: 3px 3px 0 var(--ink);
+      --shadow-lg: 8px 8px 0 var(--ink);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas,
+        "PingFang SC", "Microsoft YaHei", monospace;
+      color: var(--ink);
+      background-color: #f7d9a8;
+      background-image:
+        linear-gradient(rgba(43,38,50,0.05) 2px, transparent 2px),
+        linear-gradient(90deg, rgba(43,38,50,0.05) 2px, transparent 2px);
+      background-size: 24px 24px;
+      padding: 24px 16px 64px;
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; }
+
+    .topbar {
+      background: var(--cream); border: 4px solid var(--ink); box-shadow: var(--shadow-lg);
+      padding: 14px 18px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+    .topbar .logo { font-weight: 700; font-size: 16px; }
+    .topbar .sp { flex: 1; }
+    .topbar a.back, .topbar a.link {
+      border: 3px solid var(--ink); background: var(--paper); color: var(--ink);
+      padding: 6px 12px; font-size: 12px; text-decoration: none; box-shadow: var(--shadow-sm);
+    }
+    .topbar a.back:hover, .topbar a.link:hover { background: #ffedd6; }
+
+    .card {
+      background: var(--paper); border: 4px solid var(--ink); box-shadow: var(--shadow-lg);
+      padding: 18px; margin-top: 18px;
+    }
+    .card h2 { margin: 0 0 12px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+    .verdict {
+      display: inline-block; border: 3px solid var(--ink); padding: 8px 14px;
+      font-size: 15px; font-weight: 700; background: var(--cream);
+    }
+    .verdict.ok { background: var(--online); color: var(--ink); }
+    .verdict.bad { background: var(--error); color: #fff; }
+    .verdict.warn { background: var(--coral); color: #fff; }
+    .verdict.inc { background: #ffefc9; }
+    .meta { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.8; }
+
+    .stages { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 10px 0 0; }
+    .stage {
+      border: 2.5px solid var(--ink); background: var(--paper); padding: 4px 10px;
+      font-size: 11.5px; color: var(--muted);
+    }
+    .stage.on { background: var(--fur); color: var(--ink); font-weight: 700; }
+    .stage.done { background: #d9f2dc; color: var(--ink); }
+    .stage.fail { background: var(--error); color: #fff; }
+    .stage-arrow { color: var(--muted); font-size: 12px; font-weight: 700; }
+
+    .events { max-height: 260px; overflow-y: auto; }
+    .ev { font-size: 12px; line-height: 1.9; }
+    .ev .ts { color: var(--muted); font-size: 11px; margin-right: 8px; }
+    .ev .st {
+      display: inline-block; border: 2px solid var(--ink); background: var(--cream);
+      font-size: 10.5px; padding: 0 6px; margin-right: 8px;
+    }
+
+    /* 回执卡:与诊断开方同一套 Excel 式网格(左列字段名+右列说明) */
+    .script .px-grid { border: 2px solid var(--ink); background: var(--paper); }
+    .script .px-row {
+      display: grid; grid-template-columns: 10em 1fr;
+      border-top: 2px dashed rgba(43,38,50,.25);
+    }
+    .script .px-row:first-child { border-top: none; }
+    .script .px-row.head { background: var(--cream); }
+    .script .px-label {
+      padding: 8px 12px; border-right: 2px solid rgba(43,38,50,.5);
+      font-size: 12.5px; font-weight: 700; letter-spacing: .5px;
+    }
+    .script .px-text {
+      padding: 8px 12px; font-size: 13px; line-height: 1.8; word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .script .px-row.head .px-label,
+    .script .px-row.head .px-text { color: #6d6478; font-size: 12px; letter-spacing: 1px; }
+    .script .from { margin-top: 10px; font-size: 11px; color: var(--muted); }
+
+    .falsify {
+      border: 3px solid var(--ink); background: var(--cream); padding: 10px 12px;
+      font-size: 12.5px; line-height: 1.8;
+    }
+    .kv { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+    .pill {
+      border: 2px solid var(--ink); font-size: 10.5px; padding: 1px 7px; background: var(--paper);
+    }
+    .pill.ok { background: var(--online); }
+    .pill.bad { background: var(--error); color: #fff; }
+    .pill.warn { background: var(--fur); }
+    .notes li { font-size: 12.5px; line-height: 1.9; }
+    .notes { padding-left: 20px; margin: 0; }
+    .empty { color: var(--muted); font-size: 13px; padding: 30px 0; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <span class="logo">🐾 OpsPaw · 修复回执详情</span>
+      <span class="sp"></span>
+      <a class="link" id="diag-link" style="display:none" href="#">← 归因卡片</a>
+      <a class="back" href="/">← 回到对话</a>
+    </div>
+
+    <div class="card" id="status-card">
+      <h2>修复状态</h2>
+      <div id="status-body"><div class="empty">加载中…</div></div>
+    </div>
+
+    <div class="card" id="report-card" style="display:none">
+      <h2>修复回执（修复 agent 生成 · 医生开方式）</h2>
+      <div id="report-body" class="script"></div>
+    </div>
+
+    <div class="card" id="evidence-card" style="display:none">
+      <h2>修复执行证据</h2>
+      <div id="evidence-body"></div>
+    </div>
+  </div>
+
+  <script>
+    const REPAIR_ID = location.pathname.split("/").pop();
+    const STAGES = ["scene", "fix", "verify", "report"];
+    const STAGE_LABEL = { scene: "复核现场", fix: "修复执行", verify: "确认结果",
+                          report: "写回执", failed: "失败", done: "完成" };
+    const VERDICT = {
+      succeeded: { cls: "ok", text: "修复完成 · 验证通过" },
+      symptom_resolved: { cls: "inc", text: "症状已消失 · 未执行修复" },
+      verification_failed: { cls: "bad", text: "修复未生效 · 建议转人工" },
+      verification_unknown: { cls: "warn", text: "修复已执行 · 结果无法确认" },
+      execution_failed: { cls: "bad", text: "执行失败" },
+      execution_unknown: { cls: "warn", text: "执行状态未知" },
+      failed: { cls: "bad", text: "修复 agent 异常" },
+    };
+    let timer = null;
+
+    async function poll() {
+      let d;
+      try {
+        const r = await fetch("/api/repair/runs/" + REPAIR_ID);
+        d = await r.json();
+      } catch (e) { return; }
+      if (d.error) {
+        document.getElementById("status-body").innerHTML =
+          '<div class="empty">修复任务不存在或已丢失(服务重启会丢内存任务,终态任务靠存档回放)。</div>';
+        stop();
+        return;
+      }
+      if (d.conversation_id) {
+        document.querySelector(".back").href = "/?conversation=" + d.conversation_id;
+      }
+      if (d.diagnosis_id) {
+        const dl = document.getElementById("diag-link");
+        dl.style.display = "";
+        dl.href = "/diagnosis/" + d.diagnosis_id;
+      }
+      renderStatus(d);
+      if (d.status === "running") return;
+      stop();
+      renderReport(d);
+      renderEvidence(d);
+    }
+    function stop() { if (timer) { clearInterval(timer); timer = null; } }
+
+    function renderStatus(d) {
+      const el = document.getElementById("status-body");
+      const res = d.result || {};
+      const failed = d.status === "failed";
+      const v = VERDICT[res.verdict] || VERDICT.failed;
+      const chips = STAGES.map((s) => {
+        let cls = "stage";
+        if (d.status !== "running" && s !== "failed") cls += " done";
+        if (failed && s === "report") cls = "stage fail";
+        if (s === d.stage && d.status === "running") cls += " on";
+        return '<span class="' + cls + '">' + STAGE_LABEL[s] + "</span>";
+      }).join('<span class="stage-arrow">→</span>');
+      const last = (d.events || [])[d.events.length - 1];
+      el.innerHTML =
+        '<div class="verdict ' + (d.status === "running" ? "" : v.cls) + '">' +
+          (d.status === "running" ? "修复进行中(" + (STAGE_LABEL[d.stage] || d.stage) + ")…"
+                                  : d.status === "failed" ? v.text : v.text) +
+        "</div>" +
+        '<div class="stages">' + chips + "</div>" +
+        (last ? '<div class="meta">最近进展 [' + last.ts + "] " + escapeHtml(last.detail) + "</div>" : "") +
+        // 回滚入口:修复未生效/失败且存在可逆动作(切开关)时,一键切回修复前旧值
+        (d.status !== "running" && (d.result || {}).rollback &&
+         ["execution_failed", "verification_failed", "execution_unknown", "verification_unknown"]
+           .indexOf(res.verdict) >= 0
+          ? '<div class="meta"><button id="rollback-btn" class="link" onclick="doRollback(this)" style="font:inherit;border:3px solid var(--ink);background:var(--paper);padding:6px 12px;cursor:pointer;box-shadow:var(--shadow-sm)">⮌ 回滚到修复前(把 ' +
+            escapeHtml((d.result.rollback.params || {}).flag || "") + ' 切回 ' +
+            escapeHtml((d.result.rollback.params || {}).variant || "") + ')</button></div>'
+          : "") +
+        '<div class="meta">服务 ' + escapeHtml(d.service || "") +
+        (d.platform ? " · 平台 " + escapeHtml(d.platform) : "") +
+        (d.diagnosis_id ? ' · <a href="/diagnosis/' + encodeURIComponent(d.diagnosis_id) + '">归因卡片详情</a>' : "") + "</div>" +
+        '<div class="meta" style="margin-top:10px">处理过程</div><div class="events">' +
+        (d.events || []).map((ev) => '<div class="ev"><span class="ts">' + ev.ts +
+          '</span><span class="st">' + escapeHtml(STAGE_LABEL[ev.stage] || ev.stage) +
+          "</span>" + escapeHtml(ev.detail) + "</div>").join("") + "</div>";
+    }
+
+    function renderReport(d) {
+      const r = (d.result || {}).report;
+      const el = document.getElementById("report-body");
+      if (!r) { document.getElementById("report-card").style.display = "none"; return; }
+      const rows = [["现场确认", r.scene], ["修复过程", r.action],
+                    ["结果确认", r.result], ["agent 的看法", r.opinion]];
+      const head = '<div class="px-row head"><div class="px-label">字段</div>' +
+                   '<div class="px-text">说明</div></div>';
+      const body = rows.filter(([, v]) => v).map(([k, v]) =>
+        '<div class="px-row"><div class="px-label">' + escapeHtml(k) +
+        '</div><div class="px-text">' + escapeHtml(v) + "</div></div>").join("");
+      el.innerHTML = '<div class="px-grid">' + head + body + "</div>" +
+        '<div class="from">— 修复 agent 回执 · 复核/执行/确认均由 agent 自主决策完成</div>';
+      document.getElementById("report-card").style.display = "block";
+    }
+
+    function renderEvidence(d) {
+      const res = d.result || {};
+      if (!res.action) { document.getElementById("evidence-card").style.display = "none"; return; }
+      let html = '<div class="falsify">';
+      html += '<div class="kv"><span class="pill warn">' + escapeHtml(res.action) +
+              "</span>" + (res.verdict ? '<span class="pill">' + escapeHtml(res.verdict) + "</span>" : "") + "</div>";
+      if (res.plan_id) {
+        html += '<div class="meta">计划 <a href="/admin">' + escapeHtml(res.plan_id) +
+                "</a>" + (res.execution_id ? " · 执行 " + escapeHtml(res.execution_id) : "") +
+                "(计划/审批/冷却/独立验证走同一套修复状态机,审计可查)</div>";
+      }
+      const v = res.verification || {};
+      if (v.status) {
+        html += '<div class="meta">状态机验证:' + escapeHtml(v.status) +
+          (v.reason ? "(" + escapeHtml(v.reason) + ")" : "") + "</div>";
+        // 容器前后对比只对容器类动作有意义;flag 类动作的 before/after 为空,硬渲染就是误导
+        const hasB = v.before && Object.keys(v.before).length,
+              hasA = v.after && Object.keys(v.after).length;
+        if (hasB || hasA) {
+          const st = (x) => x && Object.keys(x).length
+            ? (x.running ? "在跑" : "没在跑") + (x.health ? "/健康 " + x.health : "") : "无记录";
+          html += '<div class="meta">执行前 ' + escapeHtml(st(v.before)) +
+                  " → 执行后 " + escapeHtml(st(v.after)) + "</div>";
+        }
+      }
+      const ps = res.post_symptom || {};
+      if (ps.status) {
+        html += '<div class="meta">修复后指标观测:' + escapeHtml(ps.status) +
+          (ps.reason ? "——" + escapeHtml(ps.reason) : "") + "</div>";
+      }
+      html += "</div>";
+      const notes = res.scene_notes || [];
+      if (notes.length) {
+        html += '<h2 style="margin-top:18px">现场复核记录(agent 逐步查证)</h2><ul class="notes">' +
+          notes.map((n) => "<li>" + escapeHtml(n) + "</li>").join("") + "</ul>";
+      }
+      const vn = res.verify_notes || [];
+      if (vn.length) {
+        html += '<h2 style="margin-top:18px">修复后再探测记录</h2><ul class="notes">' +
+          vn.map((n) => "<li>" + escapeHtml(n) + "</li>").join("") + "</ul>";
+      }
+      document.getElementById("evidence-body").innerHTML = html;
+      document.getElementById("evidence-card").style.display = "block";
+    }
+
+    function escapeHtml(t) {
+      return String(t).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    }
+
+    // 回滚:确定性逆操作(切回修复前旧值),服务端走同一套计划/审批/验证状态机
+    async function doRollback(btn) {
+      btn.disabled = true;
+      btn.textContent = "回滚执行中…(切开关 + 独立验证,约 10 秒)";
+      try {
+        const r = await fetch("/api/repair/runs/" + REPAIR_ID + "/rollback", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ approved_by: "user" }) });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || ("HTTP " + r.status));
+        btn.textContent = "已发起回滚 · 状态机结果:" + d.status + "(计划 " + d.rollback_plan_id + ")";
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = "回滚失败:" + e.message + "(点击重试)";
+      }
+    }
+
+    timer = setInterval(poll, 2000);
+    poll();
+  </script>
+</body>
+</html>

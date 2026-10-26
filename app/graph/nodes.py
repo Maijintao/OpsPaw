@@ -193,4 +193,9 @@ async def agent_tools(state) -> dict:
             if payload.get("diagnosis_id"):
                 actions.append({"type": "diagnosis_card", "diagnosis_id": payload["diagnosis_id"],
                                 "service": payload.get("service", "")})
+        if result.ok and call.get("name") == "start_repair":
+            payload = json.loads(result.tool_message.content)
+            if payload.get("status") == "running" and payload.get("repair_id"):
+                actions.append({"type": "repair_card", "repair_id": payload["repair_id"],
+                                "service": payload.get("service", "")})
     return {"messages": messages, "suggested_actions": actions}

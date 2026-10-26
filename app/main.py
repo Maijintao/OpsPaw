@@ -82,3 +82,8 @@ app.include_router(diagnosis_router)
 @app.get("/diagnosis", include_in_schema=False)
 async def diagnosis_page():
     return FileResponse(_STATIC / "diagnosis.html")
+
+
+@app.get("/repair/{repair_id}", include_in_schema=False)
+async def repair_page(repair_id: str) -> FileResponse:
+    return FileResponse(_STATIC / "repair.html")
