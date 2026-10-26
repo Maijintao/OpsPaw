@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     mcp_tool_timeout: float = 10.0
     tool_max_retries: int = 2
     demo_ticket_delay_seconds: float = 0.0
+    repair_public_base_url: str = ""
 
 
 settings = Settings()

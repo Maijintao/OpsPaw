@@ -693,4 +693,3 @@ async def upsert_settings(items: dict[str, str]) -> None:
             else:
                 row.svalue = v
         await s.commit()
-

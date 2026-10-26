@@ -13,6 +13,7 @@ from app.api.conversations import router as conversations_router
 from app.api.tools import router as tools_router
 from app.tools import registry
 from app.api.actions import router as actions_router
+from app.api.repair import router as repair_router
 
 
 @asynccontextmanager
@@ -43,6 +44,7 @@ app.include_router(agent_router)
 app.include_router(conversations_router)
 app.include_router(tools_router)
 app.include_router(actions_router)
+app.include_router(repair_router)
 
 _STATIC = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=_STATIC), name="static")
