@@ -41,3 +41,9 @@ data/aiopslab/flagd_snapshot.json
 .DS_Store
 .workbuddy/
 .workbuddy-ai/
+
+
+# 运行中的故障窗、模型经验与重建画像不作为源码上传。
+data/known_incidents.json
+app/diagnosis/opsagent/reflection_data/
+data/iforest/*.pkl
