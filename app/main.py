@@ -133,3 +133,8 @@ async def observability_page() -> FileResponse:
 @app.get("/topics", include_in_schema=False)
 async def topics_page() -> FileResponse:
     return FileResponse(_STATIC / "topics.html")
+
+
+@app.get("/incidents", include_in_schema=False)
+async def incidents_page() -> FileResponse:
+    return FileResponse(_STATIC / "incidents.html")
