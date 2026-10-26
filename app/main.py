@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -20,9 +21,14 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     await runtime.init_graph()
     registry.scan_builtin()
+    from app.api.targets import heal_loop
+    healing = asyncio.create_task(heal_loop())
     try:
         yield
     finally:
+        healing.cancel()
+        with suppress(asyncio.CancelledError):
+            await healing
         await runtime.close_graph()
         await engine.dispose()
 

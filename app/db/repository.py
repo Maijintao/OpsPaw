@@ -260,3 +260,15 @@ async def delete_target(target_id: int) -> bool:
         await s.delete(row)
         await s.commit()
         return True
+
+
+async def update_target_sources(target_id: int, sources: list) -> Target | None:
+    """只改 sources(指纹刷新/自愈改址专用):不碰 name——机器自动写回不许动人工起的字段。"""
+    async with db.async_session() as s:
+        row = await s.get(Target, target_id)
+        if row is None:
+            return None
+        row.sources = sources
+        await s.commit()
+        await s.refresh(row)
+        return row

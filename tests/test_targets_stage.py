@@ -37,3 +37,9 @@ async def test_probe_validates_data_and_platform_identity(monkeypatch):
     async def invalid(*a, **kw): return httpx.Response(200, text="not json")
     monkeypatch.setattr(targets, "_get", invalid)
     assert (await targets._probe_jaeger("http://jaeger.test"))["online"] is False
+
+
+def test_address_recovery_requires_recorded_identity():
+    assert targets._fp_match([], ["service-a"]) is False
+    assert targets._fp_match(["service-a"], ["service-a", "service-b"]) is True
+    assert targets._fp_match(["service-a"], ["service-b"]) is False
