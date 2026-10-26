@@ -1,0 +1,11 @@
+# 由 scripts/gen_prom_rules.py 生成(发现自 http://42.193.188.243:9090),勿手改,重跑脚本再生成。
+# 两段式:先记每桶速率和(保留 le),再在记录序列上算分位——第二段几乎免费。
+# rate 窗与粗筛 SCAN_WINDOW_S=300s 同刻度;interval 与 HISTORY_STEP_S=300s 对齐。
+groups:
+  - name: opspaw_span_latency
+    interval: 5m
+    rules:
+      - record: service:span_latency_bucket_sum:5m
+        expr: sum by (le, service_name) (rate({__name__="traces_span_metrics_duration_milliseconds_bucket"}[5m]))
+      - record: service:span_latency_p95:5m
+        expr: histogram_quantile(0.95, service:span_latency_bucket_sum:5m)

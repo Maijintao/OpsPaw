@@ -202,7 +202,7 @@ async def series(target_id: int, service: str, minutes: int = 60) -> dict:
     只画一条线看不出对比。选中的服务由前端高亮,其余画成淡色底噪。
     表达式与 Grafana 面板共用 metric_specs,两边口径不会分叉。
     """
-    from app.tools import metrics as detect
+    from app.diagnosis import detect
 
     target = await repository.get_target(target_id)
     if target is None:
@@ -253,7 +253,7 @@ async def ensure_dashboard(target_id: int) -> dict:
 
     重复调用是覆盖更新(同一 uid),不会堆面板。发现不到指标就抛错,不生成空面板。
     """
-    from app.tools import metrics as detect
+    from app.diagnosis import detect
 
     hit = _cache_get(f"dash:{target_id}", 600)
     if hit is not None:
