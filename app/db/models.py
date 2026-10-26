@@ -131,6 +131,100 @@ class RepairConnector(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+
+class AppSetting(Base):
+    """后台「API 设置」:运行时可改的上游配置覆盖项(key-value),优先级高于 .env。
+
+    只存与 .env 不同的覆盖值,程序自改 .env 是反模式(容器只读/git 脏),DB 才是运行时
+    配置的正解。embed_fingerprint 单独一条:记录「Milvus 里的向量是哪个嵌入配置产出的」
+    (base_url+model)——换嵌入模型向量空间不通用、不能互转,指纹变了必须 drop 集合
+    全量重嵌;api_key 不进指纹(key 只影响连通性,不影响向量空间)。"""
+    __tablename__ = "app_settings"
+
+    skey: Mapped[str] = mapped_column(String(64), primary_key=True)
+    svalue: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+
+class RepairPlan(Base):
+    """修复计划:动作、目标、参数定稿后算一个 hash,审批和执行都认这个 hash。
+
+    计划一旦创建就不再改——要改就作废重开。这是"审批批的是哪一份"唯一说得清的做法。"""
+    __tablename__ = "repair_plans"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    target_id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), index=True)
+    connector_id: Mapped[str] = mapped_column(String(32), index=True)
+    conversation_id: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), nullable=True)
+    diagnosis_id: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    action: Mapped[str] = mapped_column(String(32))
+    service: Mapped[str] = mapped_column(String(128))
+    params: Mapped[dict] = mapped_column(JSON, default=dict)
+    reason: Mapped[str] = mapped_column(String(500), default="")
+    risk: Mapped[str] = mapped_column(String(16), default="中")
+    plan_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), default="awaiting_confirmation")
+    created_by: Mapped[str] = mapped_column(String(64), default="admin")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+
+class RepairApproval(Base):
+    """审批:绑定计划 hash、审批人、有效期。计划内容一变 hash 就变,旧审批自动失效。"""
+    __tablename__ = "repair_approvals"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    plan_id: Mapped[str] = mapped_column(String(32), index=True)
+    plan_hash: Mapped[str] = mapped_column(String(64))
+    approved_by: Mapped[str] = mapped_column(String(64))
+    approved_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active/used/rejected
+
+
+
+class RepairExecution(Base):
+    """执行记录:一次计划一次执行,结果与验证分开存——执行成功不等于问题解决。"""
+    __tablename__ = "repair_executions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    plan_id: Mapped[str] = mapped_column(String(32), index=True)
+    approval_id: Mapped[str] = mapped_column(String(32))
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    connector_id: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(24), default="running")
+    started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    verification: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+
+class RepairAuditLog(Base):
+    """修复审计:谁在什么时候对哪个平台做了什么。只记 ID、状态和安全摘要,
+    不放 token、密钥、完整命令。"""
+    __tablename__ = "repair_audit_logs"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True)
+    target_id: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), index=True, nullable=True)
+    connector_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    plan_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    execution_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    actor: Mapped[str] = mapped_column(String(64), default="admin")
+    event_type: Mapped[str] = mapped_column(String(48))
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class DiagnosisRun(Base):
     """根因分析任务存档:诊断层 v0 的 run 只存内存,进程重启卡片就查无此单。
     落库后聊天卡片历史回放/刷新/跨天都能拿到完整结论;终态才写库(进行中的轮询走内存)。"""

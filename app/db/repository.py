@@ -487,10 +487,14 @@ async def mark_enrollment_used(token_id: str) -> None:
 
 
 async def ensure_repair_tables() -> None:
-    """创建当前已接入的注册令牌表。"""
+    """创建当前已接入的修复连接器、计划、审批、执行与审计表。"""
+    tables = (RepairEnrollmentToken, RepairConnector, RepairPlan, RepairApproval,
+              RepairExecution, RepairAuditLog, AppSetting)
     async with db.engine.begin() as conn:
-        await conn.run_sync(lambda c: RepairEnrollmentToken.__table__.create(c, checkfirst=True)
-        RepairConnector.__table__.create(c, checkfirst=True))
+        def _create(sync_conn):
+            for model in tables:
+                model.__table__.create(sync_conn, checkfirst=True)
+        await conn.run_sync(_create)
 
 
 async def create_repair_connector(connector_id: str, target_id: int, name: str,
@@ -553,5 +557,140 @@ async def delete_repair_connectors_of_target(target_id: int) -> None:
         await s.execute(delete(RepairConnector).where(RepairConnector.target_id == target_id))
         await s.execute(delete(RepairEnrollmentToken)
                         .where(RepairEnrollmentToken.target_id == target_id))
+        await s.commit()
+
+
+
+async def create_repair_plan(row: dict) -> None:
+    async with db.async_session() as s:
+        s.add(RepairPlan(**row))
+        await s.commit()
+
+
+async def get_repair_plan(plan_id: str) -> RepairPlan | None:
+    async with db.async_session() as s:
+        return await s.get(RepairPlan, plan_id)
+
+
+async def list_repair_plans(target_id: int, limit: int = 10) -> list[RepairPlan]:
+    async with db.async_session() as s:
+        stmt = (select(RepairPlan).where(RepairPlan.target_id == target_id)
+                .order_by(RepairPlan.created_at.desc()).limit(limit))
+        return list((await s.execute(stmt)).scalars().all())
+
+
+async def set_repair_plan_status(plan_id: str, status: str) -> None:
+    async with db.async_session() as s:
+        row = await s.get(RepairPlan, plan_id)
+        if row is not None:
+            row.status = status
+            await s.commit()
+
+
+async def create_repair_approval(row: dict) -> None:
+    async with db.async_session() as s:
+        s.add(RepairApproval(**row))
+        await s.commit()
+
+
+async def get_repair_approval(approval_id: str) -> RepairApproval | None:
+    async with db.async_session() as s:
+        return await s.get(RepairApproval, approval_id)
+
+
+async def set_repair_approval_status(approval_id: str, status: str) -> None:
+    async with db.async_session() as s:
+        row = await s.get(RepairApproval, approval_id)
+        if row is not None:
+            row.status = status
+            await s.commit()
+
+
+async def create_repair_execution(row: dict) -> None:
+    async with db.async_session() as s:
+        s.add(RepairExecution(**row))
+        await s.commit()
+
+
+async def finish_repair_execution(execution_id: str, status: str, result: dict | None,
+                                  verification: dict | None, error: str | None) -> None:
+    async with db.async_session() as s:
+        row = await s.get(RepairExecution, execution_id)
+        if row is None:
+            return
+        row.status = status
+        row.result = result
+        row.verification = verification
+        row.error = (error or "")[:500] or None
+        row.finished_at = datetime.now()
+        await s.commit()
+
+
+async def get_repair_execution(execution_id: str) -> RepairExecution | None:
+    async with db.async_session() as s:
+        return await s.get(RepairExecution, execution_id)
+
+
+async def latest_execution_for_plan(plan_id: str) -> RepairExecution | None:
+    async with db.async_session() as s:
+        stmt = (select(RepairExecution).where(RepairExecution.plan_id == plan_id)
+                .order_by(RepairExecution.started_at.desc()).limit(1))
+        return (await s.execute(stmt)).scalars().first()
+
+
+async def latest_repair_execution(target_id: int, service: str,
+                                  action: str) -> RepairExecution | None:
+    """同一平台同一服务同一动作的最近一次执行——冷却时间靠它判,防重启循环。"""
+    async with db.async_session() as s:
+        stmt = (select(RepairExecution)
+                .join(RepairPlan, RepairPlan.id == RepairExecution.plan_id)
+                .where(RepairPlan.target_id == target_id,
+                       RepairPlan.service == service,
+                       RepairPlan.action == action)
+                .order_by(RepairExecution.started_at.desc()).limit(1))
+        return (await s.execute(stmt)).scalars().first()
+
+
+async def add_repair_audit(event_type: str, *, target_id: int | None = None,
+                           connector_id: str | None = None, plan_id: str | None = None,
+                           execution_id: str | None = None, actor: str = "admin",
+                           payload: dict | None = None) -> None:
+    """审计只记 ID、状态和安全摘要;失败不抛——审计写不进去不该拦业务。"""
+    try:
+        async with db.async_session() as s:
+            s.add(RepairAuditLog(target_id=target_id, connector_id=connector_id,
+                                 plan_id=plan_id, execution_id=execution_id,
+                                 actor=actor, event_type=event_type,
+                                 payload=payload, created_at=datetime.now()))
+            await s.commit()
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger("app").warning("修复审计写入失败 event=%s", event_type,
+                                         exc_info=True)
+
+
+async def list_repair_audit(target_id: int, limit: int = 20) -> list[RepairAuditLog]:
+    async with db.async_session() as s:
+        stmt = (select(RepairAuditLog).where(RepairAuditLog.target_id == target_id)
+                .order_by(RepairAuditLog.created_at.desc(), RepairAuditLog.id.desc())
+                .limit(limit))
+        return list((await s.execute(stmt)).scalars().all())
+
+
+async def get_settings_map() -> dict[str, str]:
+    async with db.async_session() as s:
+        rows = (await s.execute(select(AppSetting))).scalars().all()
+        return {r.skey: r.svalue for r in rows}
+
+
+async def upsert_settings(items: dict[str, str]) -> None:
+    """逐键 upsert:只写传进来的键,不碰别的覆盖项。"""
+    async with db.async_session() as s:
+        for k, v in items.items():
+            row = await s.get(AppSetting, k)
+            if row is None:
+                s.add(AppSetting(skey=k, svalue=v))
+            else:
+                row.svalue = v
         await s.commit()
 
