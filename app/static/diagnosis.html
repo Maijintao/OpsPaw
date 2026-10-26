@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpsPaw · 根因分析详情</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'><rect x='2' y='2' width='4' height='4' fill='%232b2632'/><rect x='10' y='2' width='4' height='4' fill='%232b2632'/><rect x='2' y='4' width='12' height='9' fill='%232b2632'/><rect x='3' y='3' width='2' height='3' fill='%23ff9f57'/><rect x='11' y='3' width='2' height='3' fill='%23ff9f57'/><rect x='3' y='5' width='10' height='7' fill='%23ff9f57'/><rect x='5' y='7' width='1' height='2' fill='%232b2632'/><rect x='10' y='7' width='2' height='1' fill='%23ff8095'/></svg>" />
+  <style>
+    :root {
+      --ink: #2b2632;
+      --fur: #ff9f57;
+      --coral: #ff7a59;
+      --cream: #fff6e6;
+      --paper: #fffaf0;
+      --muted: #9b8f86;
+      --error: #d6455a;
+      --online: #5fcf6a;
+      --shadow: 4px 4px 0 var(--ink);
+      --shadow-sm: 3px 3px 0 var(--ink);
+      --shadow-lg: 8px 8px 0 var(--ink);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas,
+        "PingFang SC", "Microsoft YaHei", monospace;
+      color: var(--ink);
+      background-color: #f7d9a8;
+      background-image:
+        linear-gradient(rgba(43,38,50,0.05) 2px, transparent 2px),
+        linear-gradient(90deg, rgba(43,38,50,0.05) 2px, transparent 2px);
+      background-size: 24px 24px;
+      padding: 24px 16px 64px;
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; }
+
+    .topbar {
+      background: var(--cream); border: 4px solid var(--ink); box-shadow: var(--shadow-lg);
+      padding: 14px 18px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+    .topbar .logo { font-weight: 700; font-size: 16px; }
+    .topbar .sp { flex: 1; }
+    .topbar a.back {
+      border: 3px solid var(--ink); background: var(--paper); color: var(--ink);
+      padding: 6px 12px; font-size: 12px; text-decoration: none; box-shadow: var(--shadow-sm);
+    }
+    .topbar a.back:hover { background: #ffedd6; }
+
+    .card {
+      background: var(--paper); border: 4px solid var(--ink); box-shadow: var(--shadow-lg);
+      padding: 18px; margin-top: 18px;
+    }
+    .card h2 { margin: 0 0 12px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+    .verdict {
+      display: inline-block; border: 3px solid var(--ink); padding: 8px 14px;
+      font-size: 15px; font-weight: 700; background: var(--cream);
+    }
+    .verdict.rc { background: var(--error); color: #fff; }
+    .verdict.cf { background: var(--coral); color: #fff; }
+    .verdict.inc { background: #ffefc9; }
+    /* 三种"没有根因"要分开配色:平台正常是绿色(可以收工),数据不可用是灰色(去修数据源),
+       有异常但只指向受害者是黄色(要人工判断)——它们对值班员的行动完全不同。 */
+    .verdict.ok { background: #d9f2d0; }
+    .verdict.na { background: #e8e8e8; color: #555; }
+    .meta { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.8; }
+    /* 排查过程:逐服务逐维的"当前值 / 正常上界"。没结论时这是最该给用户看的东西 */
+    .digest { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+    .digest th, .digest td { border: 2px solid var(--ink); padding: 3px 6px; text-align: right; }
+    .digest th { background: var(--cream); font-weight: 700; }
+    .digest td:first-child, .digest th:first-child { text-align: left; }
+    .digest tr.ab td { background: #ffe9e9; }
+
+    .stages { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 10px 0 0; }
+    .stage {
+      border: 2.5px solid var(--ink); background: var(--paper); padding: 4px 10px;
+      font-size: 11.5px; color: var(--muted);
+    }
+    .stage.on { background: var(--fur); color: var(--ink); font-weight: 700; }
+    .stage.done { background: #d9f2dc; color: var(--ink); }
+    .stage.fail { background: var(--error); color: #fff; }
+    .stage-arrow { color: var(--muted); font-size: 12px; font-weight: 700; }
+
+    .legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 0 0 10px; font-size: 11.5px; }
+    .legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .legend i { width: 13px; height: 13px; border: 2px solid var(--ink); display: inline-block; }
+    .graph-wrap { overflow-x: auto; border: 3px solid var(--ink); background: #fffdf7; }
+    .graph-wrap svg { display: block; }
+
+    .cands { display: grid; gap: 8px; }
+    .cand {
+      display: flex; align-items: center; gap: 10px; border: 3px solid var(--ink);
+      background: var(--cream); padding: 8px 12px; font-size: 13px;
+    }
+    .cand b { font-size: 14px; }
+    .cand .score { margin-left: auto; font-weight: 700; }
+    .pill {
+      border: 2px solid var(--ink); font-size: 10.5px; padding: 1px 7px; background: var(--paper);
+    }
+    .pill.rc { background: var(--error); color: #fff; }
+
+    .chain li, .missing li { font-size: 12.5px; line-height: 1.9; }
+    .chain, .missing { padding-left: 20px; margin: 0; }
+    .missing li { color: #b07818; }
+    .events { max-height: 260px; overflow-y: auto; }
+    .ev { font-size: 12px; line-height: 1.9; }
+    .ev .ts { color: var(--muted); font-size: 11px; margin-right: 8px; }
+    .ev .st {
+      display: inline-block; border: 2px solid var(--ink); background: var(--cream);
+      font-size: 10.5px; padding: 0 6px; margin-right: 8px;
+    }
+    .falsify {
+      border: 3px solid var(--ink); background: var(--cream); padding: 10px 12px;
+      font-size: 12.5px; line-height: 1.8;
+    }
+    /* 开方卡:Excel 式网格(左列字段名 + 竖线分隔 + 右列说明),与后台「Agent 工具一览」同一套
+       表格式样;字段同时是后续修复 agent 的输入 */
+    .script .px-grid { border: 2px solid var(--ink); background: var(--paper); }
+    .script .px-row {
+      display: grid; grid-template-columns: 10em 1fr;
+      border-top: 2px dashed rgba(43,38,50,.25);
+    }
+    .script .px-row:first-child { border-top: none; }
+    .script .px-row.head { background: var(--cream); }
+    .script .px-label {
+      padding: 8px 12px; border-right: 2px solid rgba(43,38,50,.5);
+      font-size: 12.5px; font-weight: 700; letter-spacing: .5px;
+    }
+    .script .px-text {
+      padding: 8px 12px; font-size: 13px; line-height: 1.8; word-break: break-word;
+    }
+    .script .px-row.head .px-label,
+    .script .px-row.head .px-text { color: #6d6478; font-size: 12px; letter-spacing: 1px; }
+    .script .from { margin-top: 10px; font-size: 11px; color: var(--muted); }
+    .empty { color: var(--muted); font-size: 13px; padding: 30px 0; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <span class="logo">🐾 OpsPaw · 根因分析详情</span>
+      <span class="sp"></span>
+      <a class="back" href="/">← 回到对话</a>
+    </div>
+
+    <div class="card" id="status-card">
+      <h2>分析状态</h2>
+      <div id="status-body"><div class="empty">加载中…</div></div>
+    </div>
+
+    <div class="card" id="prescription-card" style="display:none">
+      <h2>诊断开方（根因说明 · 诊断 agent 生成）</h2>
+      <div id="prescription-body" class="script"></div>
+    </div>
+
+    <div class="card" id="graph-card" style="display:none">
+      <h2>服务调用拓扑（全链路 · 按健康度分级）</h2>
+      <div class="legend">
+        <span><i style="background:#b9e6c3"></i> 正常</span>
+        <span><i style="background:#ffe08a"></i> 轻度异常</span>
+        <span><i style="background:#ffab6e"></i> 中度异常</span>
+        <span><i style="background:#ff6b5e"></i> 重度 / 根因</span>
+        <span><i style="background:#fffdf7"></i> 健康度未知（无 span 采样）</span>
+      </div>
+      <div class="graph-wrap" id="graph-wrap"></div>
+    </div>
+
+    <div class="card" id="result-card" style="display:none">
+      <h2>归因结论</h2>
+      <div id="result-body"></div>
+    </div>
+  </div>
+
+  <script>
+    const DIAG_ID = location.pathname.split("/").pop();
+    const STAGES = ["queued", "detect", "collect", "topology", "localize", "attribute", "falsify", "done"];
+    const STAGE_LABEL = { queued: "排队", detect: "检测", collect: "采集", topology: "拓扑", localize: "定位",
+                          attribute: "归因", falsify: "证伪", done: "完成", failed: "失败" };
+    // 没有根因不等于"证据不足":这三种情况的行动完全不同,必须分开显示
+    // ——平台正常可以收工、只指向受害者要人工顺链查、数据不可用要去修数据源。
+    // 旧版把它们全塞进 inconclusive,值班员看到同一句话不知道下一步该干什么。
+    const VERDICT = {
+      root_cause: { cls: "rc", text: (s) => "根因判定:" + s },
+      critical_failure: { cls: "cf", text: (s) => "关键故障:" + (s || "未知服务") + ",根因服务本身无法进一步解释" },
+      impact: { cls: "inc", text: () => "仅被波及,证据里没有根因" },
+      clear: { cls: "ok", text: () => "平台正常,未发现异常" },
+      victims_only: { cls: "inc", text: () => "有异常,但只指向受害者,指不出源头" },
+      no_data: { cls: "na", text: () => "数据不可用,无法判断" },
+      inconclusive: { cls: "inc", text: () => "证据不足,未定位根因" },
+    };
+    const DIRECTION_LABEL = { symptom: "症状服务", upstream: "上游一跳", downstream: "下游一跳",
+                              upstream2: "上游两跳", downstream2: "下游两跳", error_ref: "错误指认" };
+    const TIER_LABEL = { high: "高", medium: "中", low: "低" };
+    const CATEGORY_LABEL = { error: "报错指向", resource: "资源用量", latency: "时延",
+                             time: "时间先后", topology: "调用关系", shadow: "挂死形态" };
+    const KIND_LABEL = { direct: "直接证据", inference: "推理链" };
+    let timer = null;
+
+    async function poll() {
+      let d;
+      try {
+        const r = await fetch("/api/diagnosis/" + DIAG_ID);
+        d = await r.json();
+      } catch (e) { return; }
+      // 回到对话带回原会话:诊断单挂在哪个会话下就回哪个,不回欢迎页
+      if (d.conversation_id) {
+        document.querySelector(".back").href = "/?conversation=" + d.conversation_id;
+      }
+      renderStatus(d);
+      if (d.status === "running") return;
+      stop();
+      renderPrescription(d);
+      renderResult(d);
+      renderGraph(d);
+    }
+    function stop() { if (timer) { clearInterval(timer); timer = null; } }
+
+    // 开方卡:诊断 agent 分字段输出的根因说明(描述/根因/证据原因/给修复 agent 的交代),
+    // 放在拓扑图前面先读结论再看图;旧存档 narrative 是整段字符串,兼容渲染
+    function renderPrescription(d) {
+      const p = (d.result || {}).narrative;
+      const el = document.getElementById("prescription-body");
+      if (!p) { document.getElementById("prescription-card").style.display = "none"; return; }
+      const footer = '<div class="from">— 诊断 agent 开方 · 这份说明同时作为后续修复 agent 的任务输入</div>';
+      if (typeof p === "string") {
+        el.innerHTML = escapeHtml(p).replace(/\n/g, "<br>") + footer;
+      } else {
+        const rows = [["描述", p.description], ["根因", p.fault],
+                      ["证据原因", p.reason], ["给修复 agent 的交代", p.other]];
+        const head = '<div class="px-row head"><div class="px-label">字段</div>' +
+                     '<div class="px-text">说明</div></div>';
+        const body = rows.filter(([, v]) => v).map(([k, v]) =>
+          '<div class="px-row"><div class="px-label">' + escapeHtml(k) +
+          '</div><div class="px-text">' + escapeHtml(v) + "</div></div>").join("");
+        el.innerHTML = '<div class="px-grid">' + head + body + "</div>" + footer;
+      }
+      document.getElementById("prescription-card").style.display = "block";
+    }
+
+    function renderStatus(d) {
+      const el = document.getElementById("status-body");
+      if (d.error) { el.innerHTML = '<div class="empty">诊断任务不存在或已丢失(服务重启会丢内存任务)。</div>'; return; }
+      const cur = STAGES.indexOf(d.stage);
+      const failed = d.status === "failed";
+      const chips = STAGES.slice(0, failed ? STAGES.length - 1 : STAGES.length)
+        .map((s, i) => {
+          let cls = "stage";
+          if (d.status === "done" && s !== "done") cls += " done";
+          if (failed && s === "failed") cls += " fail";
+          if (s === d.stage && d.status === "running") cls += " on";
+          if (s === "done" && d.status === "done") cls += " done";
+          return '<span class="' + cls + '">' + STAGE_LABEL[s] + "</span>";
+        })
+        // 阶段是有先后顺序的流程,箭头把顺序画出来,不是一排孤立框
+        .join('<span class="stage-arrow">→</span>');
+      const last = (d.events || [])[d.events.length - 1];
+      // verdict/root_cause 在 result 里,run 顶层没有——顶层读永远显示"证据不足"(真实事故)
+      const res0 = d.result || {};
+      el.innerHTML =
+        '<div class="verdict ' + (d.status === "running" ? "" : (VERDICT[res0.verdict] || VERDICT.inconclusive).cls) + '">' +
+          (d.status === "running" ? "根因分析中(" + (STAGE_LABEL[d.stage] || d.stage) + ")…"
+                                   : d.status === "failed" ? "诊断失败" : (VERDICT[res0.verdict] || VERDICT.inconclusive).text(res0.root_cause_service)) +
+        "</div>" +
+        '<div class="stages">' + chips + "</div>" +
+        (last ? '<div class="meta">最近进展 [' + last.ts + "] " + escapeHtml(last.detail) + "</div>" : "") +
+        '<div class="meta">服务 ' + escapeHtml(d.service || "") +
+        ((d.symptom || d.result && d.result.symptom) ? " · 症状:" + escapeHtml(d.symptom || "") : "") + "</div>";
+    }
+
+    // 全链路拓扑:从症状服务 BFS 分层;健康度=error_dev/latency_dev 取大封顶,分级绿/黄/橙/红
+    function severityOf(n) {
+      if (n.shadow) return 3;   // 零遥测影子节点=疑似挂死,直接红色
+      const dims = n.dims || {};
+      const sev = Math.max(Math.min(dims.error_dev || 0, 10), dims.latency_dev || 0);
+      if (!n.abnormal) return 0;
+      if (sev >= 8) return 3;
+      if (sev >= 3) return 2;
+      return 1;
+    }
+    const SEV_FILL = ["#b9e6c3", "#ffe08a", "#ffab6e", "#ff6b5e"];
+    const SEV_LABEL = ["正常", "轻度异常", "中度异常", "重度异常"];
+
+    function renderGraph(d) {
+      const res = d.result || {};
+      const fg = res.full_graph || res.subgraph;
+      if (!fg || !(fg.nodes || []).length) return;
+      const root = res.root_cause_service ||
+        ((fg.nodes.find((n) => n.direction === "symptom") || fg.nodes[0]).service);
+      const nodes = fg.nodes, edges = fg.edges || [];
+      const nset = new Set(nodes.map((n) => n.service));
+      const adj = {}; nodes.forEach((n) => { adj[n.service] = []; });
+      edges.forEach((e) => {
+        if (nset.has(e.from) && nset.has(e.to)) { adj[e.from].push(e.to); adj[e.to].push(e.from); }
+      });
+      // 分层:根因优先当层首,否则症状服务;同层内按严重度降序排
+      const rootNode = nodes.find((n) => n.service === root) || nodes[0];
+      const layer = {}; layer[rootNode.service] = 0;
+      const q = [rootNode.service];
+      while (q.length) {
+        const u = q.shift();
+        for (const v of adj[u]) if (layer[v] === undefined) { layer[v] = layer[u] + 1; q.push(v); }
+      }
+      const maxL = Math.max(0, ...Object.values(layer));
+      const cols = []; for (let i = 0; i <= maxL; i++) cols.push([]);
+      nodes.forEach((n) => cols[layer[n.service] === undefined ? maxL : layer[n.service]].push(n));
+      cols.forEach((c) => c.sort((a, b) => severityOf(b) - severityOf(a)));
+
+      const NW = 148, NH = 40, GX = 78, GY = 26;
+      const colH = Math.max(...cols.map((c) => c.length));
+      const W = cols.length * (NW + GX) + 30, H = colH * (NH + GY) + 30;
+      const pos = {};
+      cols.forEach((col, ci) => col.forEach((n, ri) => {
+        const off = (colH - col.length) * (NH + GY) / 2;
+        pos[n.service] = { x: 15 + ci * (NW + GX), y: 15 + ri * (NH + GY) + off };
+      }));
+
+      const INK = "#2b2632";
+      // 每种严重度一个箭头 marker(箭头颜色跟线走),箭头贴到目标框边,线全走平滑曲线——
+      // 孤立的方框没有意义,调用链必须看起来是被箭头串起来的
+      const SEV_COLOR = ["#7fbf8e", "#e0a614", "#ff7a59", "#d6455a"];
+      let s = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + " " + H + '">';
+      s += "<defs>" + SEV_COLOR.map((c, i) =>
+        '<marker id="arr' + i + '" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">' +
+        '<path d="M0,0L10,5L0,10z" fill="' + c + '"/></marker>').join("") + "</defs>";
+      const sev = {}; nodes.forEach((n) => { sev[n.service] = severityOf(n); });
+      for (const e of edges) {
+        const p1 = pos[e.from], p2 = pos[e.to];
+        if (!p1 || !p2) continue;
+        const hot = Math.max(sev[e.from] || 0, sev[e.to] || 0);
+        const ci = hot >= 3 ? 3 : hot;   // 颜色按较重一端
+        const color = SEV_COLOR[ci];
+        const x1 = p1.x + NW, y1 = p1.y + NH / 2, x2 = p2.x - 3, y2 = p2.y + NH / 2;
+        let path;
+        if (Math.abs(p1.x - p2.x) < 5) {          // 同列竖向:从框底绕右侧
+          const rx = Math.max(p1.x + NW, p2.x + NW) + 24;
+          path = "M" + (p1.x + NW / 2) + "," + (p1.y + NH) +
+                 " C" + rx + "," + (p1.y + NH) + " " + rx + "," + (p2.y + NH / 2) + " " + (p2.x + NW) + "," + y2;
+        } else if (x2 >= x1) {                    // 向右:横向贝塞尔,箭头贴目标框
+          const mx = (x1 + x2) / 2;
+          path = "M" + x1 + "," + y1 + " C" + mx + "," + y1 + " " + mx + "," + y2 + " " + x2 + "," + y2;
+        } else {                                  // 反向(往回指):从框顶绕上方
+          const ry = Math.min(p1.y, p2.y) - 26;
+          path = "M" + (p1.x + NW / 2) + "," + p1.y +
+                 " C" + (p1.x + NW / 2) + "," + ry + " " + (p2.x + NW / 2) + "," + ry + " " + (p2.x + NW / 2) + "," + p2.y;
+        }
+        const fill = (e.from === root || e.to === root);
+        s += '<path d="' + path + '" fill="none" stroke="' + color + '" stroke-width="2.2" opacity="' +
+             (fill ? 1 : 0.85) + '" marker-end="url(#arr' + ci + ')"/>';
+        const mxl = x1 + (x2 - x1) / 2;
+        if (x2 >= x1 + 40) {
+          s += '<text x="' + mxl + '" y="' + ((y1 + y2) / 2 - 5) +
+               '" text-anchor="middle" font-size="10" fill="#9b8f86">' + e.calls + "次</text>";
+        }
+      }
+      for (const n of nodes) {
+        const p = pos[n.service];
+        if (!p) continue;
+        const isRC = n.service === res.root_cause_service;
+        const sv = isRC ? 3 : severityOf(n);
+        s += '<g><rect x="' + p.x + '" y="' + p.y + '" width="' + NW + '" height="' + NH +
+             '" fill="' + (SEV_FILL[sv] || SEV_FILL[0]) + '" stroke="' + (isRC ? "#d6455a" : INK) +
+             '" stroke-width="' + (isRC ? 4 : 2) + '"/>' +
+             '<text x="' + (p.x + NW / 2) + '" y="' + (p.y + 17) + '" text-anchor="middle" font-size="12" font-weight="700" fill="' + INK + '">' +
+             escapeHtml(n.service) + "</text>" +
+             '<text x="' + (p.x + NW / 2) + '" y="' + (p.y + 32) + '" text-anchor="middle" font-size="9.5" fill="#5d5460">' +
+             (isRC ? "★ 根因 · " : n.shadow ? "零遥测·疑似挂死 · " : sv ? SEV_LABEL[sv] + " · " : "") +
+             "调用 " + n.calls + "次</text></g>";
+      }
+      document.getElementById("graph-wrap").innerHTML = s + "</svg>";
+      document.getElementById("graph-card").style.display = "block";
+    }
+
+    function renderResult(d) {
+      const res = d.result || {};
+      const v = VERDICT[res.verdict] || VERDICT.inconclusive;
+      let html = '<div class="verdict ' + v.cls + '">' + escapeHtml(v.text(res.root_cause_service)) + "</div>";
+
+      // 故障形态(代码判定):命名对齐 AIOpsLab 故障库,结论从"某服务坏了"变成"某服务 + 怎么坏的"
+      const ft = res.fault_type;
+      if (ft && ft.text) {
+        html += '<div class="meta" style="margin-top:6px">故障形态:<b>' + escapeHtml(ft.text) + "</b>" +
+          (ft.type ? "(" + escapeHtml(ft.type) + ")" : "") +
+          ((ft.basis || []).length ? "——" + escapeHtml(ft.basis.join(";")) : "") + "</div>";
+      }
+
+      // 检测层:没指定服务时先扫平台找异常锚点,把"为什么从这个服务查起"讲清楚
+      const det = res.detect;
+      if (det && (det.anchors || []).length) {
+        html += '<h2 style="margin-top:18px">平台粗筛(未指定服务,自动找异常)</h2><div class="falsify">' +
+          det.anchors.map((a) => '<div><b>' + escapeHtml(a.service) + "</b>(得分 " + a.score + ")" +
+            (a.service === res.root_cause_service ? ' <span class="pill rc">根因</span>' : "") +
+            '<div class="meta">' + (a.reasons || []).map(escapeHtml).join("<br>") + "</div></div>"
+          ).join('<div style="height:8px"></div>') +
+          (det.note ? '<div class="meta" style="margin-top:8px">' + escapeHtml(det.note) + "</div>" : "") +
+          "</div>";
+      }
+
+      // 因果分层:首因 / 次生放大 / 无关干扰,分三层读,别混成"一堆都坏了"
+      const amps = res.amplifiers || [], unrel = res.unrelated || [];
+      if (amps.length || unrel.length) {
+        html += '<h2 style="margin-top:18px">因果分层(因 / 果 / 无关)</h2><div class="falsify">' +
+          (res.root_cause_service ? "<div><b>首因</b>:" + escapeHtml(res.root_cause_service) + "</div>" : "") +
+          (amps.length ? "<div><b>次生放大</b>:" + escapeHtml(amps.join("、")) +
+            '<div class="meta">被首因带起来的服务,不是并列首因</div></div>' : "") +
+          (unrel.length ? "<div><b>无关干扰</b>:" + escapeHtml(unrel.join("、")) +
+            '<div class="meta">有异常但与本症状没有因果通路</div></div>' : "") +
+          "</div>";
+      }
+
+      const cands = res.candidates || [];
+      if (cands.length) {
+        html += '<h2 style="margin-top:18px">候选排序(异常度×拓扑位置×时间先后)</h2><div class="cands">' +
+          cands.map((c) => '<div class="cand"><b>' + escapeHtml(c.service) + "</b>" +
+            '<span class="pill">' + (DIRECTION_LABEL[c.direction] || c.direction) + "</span>" +
+            (c.service === res.root_cause_service ? '<span class="pill rc">根因</span>' : "") +
+            '<span class="score">得分 ' + c.score + "</span></div>").join("") + "</div>";
+      }
+
+      if ((res.chain || []).length) {
+        html += '<h2 style="margin-top:18px">证据链(每条引用 [E#] 编号,归因前过引用完整性校验)</h2><ul class="chain">' +
+          res.chain.map((c) => "<li>" + escapeHtml(c) + "</li>").join("") + "</ul>";
+      }
+
+      // 处方卡:病根在上面,这里回答"修复从哪里入手"
+      if ((res.suggested_actions || []).length) {
+        html += '<h2 style="margin-top:18px">处置建议(修复从哪里入手)</h2><ul class="chain">' +
+          res.suggested_actions.map((c) => "<li>" + escapeHtml(c) + "</li>").join("") + "</ul>";
+      }
+
+      const quality = res.data_quality || {};
+      const qualityLabel = { available: "可用", no_data: "无匹配数据", query_failed: "查询失败",
+                             not_checked: "未查询", sparse: "样本稀疏", empty: "无数据",
+                             data_stale: "数据已过期或超出时间窗",
+                             budget_exhausted: "查询预算已用完(未采完)" };
+      const traceMeta = quality.trace || {};
+      const qualityItems = [
+        ["Trace", traceMeta.status, [traceMeta.spans != null ? traceMeta.spans + " 条 span" : "",
+          traceMeta.selected_lookback_min ? "选用近 " + traceMeta.selected_lookback_min + " 分钟" : "",
+          traceMeta.requested_lookbacks_min ? "尝试窗口 " + traceMeta.requested_lookbacks_min.join("/ ") + " 分钟" : "",
+          traceMeta.error || ""].filter(Boolean).join("；")],
+        ["CPU 当前窗", quality.cpu && quality.cpu.current, ""],
+        ["CPU 基线", quality.cpu && quality.cpu.baseline, quality.cpu && quality.cpu.baseline_window || ""],
+        ["内存当前窗", quality.memory && quality.memory.current, ""],
+        ["内存基线", quality.memory && quality.memory.baseline, quality.memory && quality.memory.baseline_window || ""],
+      ].filter(([, status]) => status);
+      if (qualityItems.length) {
+        html += '<h2 style="margin-top:18px">诊断数据质量</h2><div class="meta">' +
+          qualityItems.map(([label, status, detail]) => escapeHtml(label + "：" +
+            (qualityLabel[status] || status) + (detail ? "（" + detail + "）" : ""))).join("<br>") +
+          "</div>";
+      }
+
+      if ((res.missing || []).length) {
+        html += '<h2 style="margin-top:18px">证据缺口(缺什么就说什么,不硬编)</h2><ul class="missing">' +
+          res.missing.map((c) => "<li>" + escapeHtml(c) + "</li>").join("") + "</ul>";
+      }
+
+      // 排查过程:没结论的时候,用户最想知道"你到底查了什么、为什么排除别人"。
+      // 这两块数据管线里本来就有(pruned 剪枝记录 + digest 逐维数字),以前只在事件流里。
+      const _pruned = ((res.detect || {}).pruned) || [];
+      const _digest = ((res.detect || {}).digest) || [];
+      if (_pruned.length || _digest.length) {
+        html += '<h2 style="margin-top:18px">排查过程(凭什么排除别人)</h2>';
+        if (_pruned.length) {
+          html += '<ul class="missing" style="color:var(--ink)">' + _pruned.map((p) =>
+            "<li>" + escapeHtml(p.service) + " 判为受害者:" + escapeHtml(p.explained_by || "下游") +
+            " 能解释它(同层 tier " + escapeHtml(String(p.tier)) + ")</li>").join("") + "</ul>";
+        }
+        if (_digest.length) {
+          const _f = (v) => (v == null ? "—" : (Math.abs(v) >= 1000 ? Math.round(v) : Math.round(v * 1000) / 1000));
+          html += '<table class="digest"><tr><th>服务</th><th>错误率</th><th>时延(ms)</th>' +
+                  '<th>调用量</th><th>CPU</th><th>内存</th></tr>';
+          for (const row of _digest) {
+            html += '<tr' + ((row.abnormal || []).length ? ' class="ab"' : '') + '>' +
+                    '<td>' + escapeHtml(row.service) + '</td>';
+            for (const k of ["error", "latency", "calls", "cpu", "memory"]) {
+              const d = (row.dims || {})[k];
+              html += '<td>' + (d && d.v != null ? _f(d.v) + " / " + _f(d.edge) : "—") + '</td>';
+            }
+            html += '</tr>';
+          }
+          html += '</table><div class="meta">格式:当前值 / 正常上界;整行标红 = 有维度超出边界</div>';
+        }
+      }
+
+      if (res.gate) {
+        html += '<h2 style="margin-top:18px">根因信号把关</h2><div class="falsify">' +
+          (res.gate.passed
+            ? "通过:" + escapeHtml(res.gate.note || "") +
+              ((res.gate.signals || []).length ? "(信号:" + escapeHtml(res.gate.signals.join("、")) + ")" : "")
+            : "未通过:" + escapeHtml(res.gate.note || "") +
+              (res.gate.downgraded_to ? "(降级 " + escapeHtml(res.gate.downgraded_to) + ")" : ""));
+        const rs = res.gate.ref_strength;
+        if (rs) {
+          html += '<div class="meta">指认强度:' + rs.count + " 条失败调用指向它,占其被调用数的 " +
+            Math.round((rs.ratio || 0) * 100) + "%" + (rs.strong ? "(强指认)" : "") + "</div>";
+        }
+        html += "</div>";
+      }
+
+      if (res.falsify) {
+        // 旧存档(2026-10-15 之前)的证伪会真的改判,报告里带 swapped_to;新行为只记录。
+        // 两种都要如实显示,别把旧存档的改判说成"仅记录"。
+        const fz = res.falsify;
+        let fzText;
+        if (!fz.refuted) {
+          fzText = "未发现硬反证,结论放行。" + (fz.reason ? escapeHtml(fz.reason) : "");
+        } else if (fz.swapped_to) {
+          fzText = "结论被硬反证改判(旧版行为,已废弃):" + escapeHtml(fz.reason || "") +
+                   " → 改判为 " + escapeHtml(fz.swapped_to);
+        } else {
+          fzText = "检出硬反证(仅记录,未改判):" + escapeHtml(fz.reason || "");
+        }
+        html += '<h2 style="margin-top:18px">对抗证伪(只记录,不改判)</h2><div class="falsify">' +
+          fzText + "</div>";
+      }
+
+      if (res.confidence) {
+        const cf = res.confidence;
+        html += '<h2 style="margin-top:18px">结论置信(代码判定,非模型自报)</h2><div class="falsify">' +
+          '<b>证据充分度:' + (TIER_LABEL[cf.tier] || cf.tier) + "</b>" +
+          (cf.summary ? "——" + escapeHtml(cf.summary) : "");
+        if ((cf.evidence || []).length) {
+          html += '<ul class="chain">' + cf.evidence.map((e) =>
+            "<li>[" + (KIND_LABEL[e.kind] || e.kind) + "] " +
+            (CATEGORY_LABEL[e.category] || e.category) + ":" + escapeHtml(e.fact) + "</li>").join("") + "</ul>";
+        }
+        if ((cf.blind_spots || []).length) {
+          html += '<div class="meta" style="margin-top:8px">采集盲点(不影响档位,是采集待办):<br>' +
+            cf.blind_spots.map((b) => escapeHtml("· " + b)).join("<br>") + "</div>";
+        }
+        html += "</div>";
+      }
+
+      if (res.insufficient_trace) {
+        html += '<div class="meta">⚠ 本次采样 trace 条数不足统计下限,错误率/时延维度仅作参考。</div>';
+      }
+
+      const evs = d.events || [];
+      if (evs.length) {
+        html += '<h2 style="margin-top:18px">处理过程</h2><div class="events">' +
+          evs.map((ev) => '<div class="ev"><span class="ts">' + ev.ts + '</span><span class="st">' +
+            (STAGE_LABEL[ev.stage] || ev.stage) + "</span>" + escapeHtml(ev.detail) + "</div>").join("") + "</div>";
+      }
+      const el = document.getElementById("result-body");
+      el.innerHTML = html;
+      document.getElementById("result-card").style.display = "block";
+    }
+
+    function escapeHtml(t) {
+      return String(t).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    }
+
+    timer = setInterval(poll, 2000);
+    poll();
+  </script>
+</body>
+</html>

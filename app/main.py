@@ -19,6 +19,9 @@ from app.api.actions import router as actions_router
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    from app.db import repository
+    await repository.ensure_targets_table()
+    await repository.ensure_diagnosis_table()
     await runtime.init_graph()
     registry.scan_builtin()
     from app.api.targets import heal_loop
@@ -66,3 +69,12 @@ app.include_router(grafana_router)
 @app.get("/platforms", include_in_schema=False)
 async def platforms_page():
     return FileResponse(_STATIC / "platforms.html")
+
+
+from app.api.diagnosis import router as diagnosis_router
+app.include_router(diagnosis_router)
+
+
+@app.get("/diagnosis", include_in_schema=False)
+async def diagnosis_page():
+    return FileResponse(_STATIC / "diagnosis.html")

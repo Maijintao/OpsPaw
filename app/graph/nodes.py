@@ -1,3 +1,4 @@
+import json
 import logging
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -187,4 +188,9 @@ async def agent_tools(state) -> dict:
         result = await engine.execute_tool_call(call, state["conversation_id"], specs,
                                                confirmed=confirmed, user_id=state.get("user_id", ""))
         messages.append(result.tool_message)
+        if result.ok and call.get("name") == "start_diagnosis":
+            payload = json.loads(result.tool_message.content)
+            if payload.get("diagnosis_id"):
+                actions.append({"type": "diagnosis_card", "diagnosis_id": payload["diagnosis_id"],
+                                "service": payload.get("service", "")})
     return {"messages": messages, "suggested_actions": actions}

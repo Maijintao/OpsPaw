@@ -383,3 +383,82 @@ async def recent_change_signals(service: str, since: datetime, until: datetime) 
         logging.getLogger("app").warning("变更信号查询失败 service=%s", service, exc_info=True)
         return []
     return sorted(out, key=lambda x: x["ts"], reverse=True)
+
+
+async def save_diagnosis_run(run: dict) -> None:
+    """诊断终态落库(整单覆盖式 upsert,同一 id 只有一份终态)。失败不抛——存档是增强,
+    不能反过来弄死诊断任务本身,调用方已自行兜底。"""
+    import logging
+
+    row = {
+        "id": run["id"], "conversation_id": run.get("conversation_id"),
+        "service": run.get("service") or "", "symptom": run.get("symptom"),
+        "platform": run.get("platform"),
+        "status": run.get("status") or "done",
+        "verdict": (run.get("result") or {}).get("verdict"),
+        "root_cause_service": (run.get("result") or {}).get("root_cause_service"),
+        "confirmation": run.get("confirmation") or "pending",
+        "events": run.get("events") or [], "result": run.get("result"),
+    }
+    try:
+        async with db.async_session() as s:
+            await s.merge(DiagnosisRun(**row))
+            await s.commit()
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger("app").warning("诊断任务 %s 落库失败(%s),卡片仅本次进程内可见",
+                                         run.get("id"), type(e).__name__)
+
+
+async def get_diagnosis_run(diag_id: str) -> dict | None:
+    """按 id 取存档,重建成 API 同形的 run 载荷(内存没有时兜底用)。"""
+    async with db.async_session() as s:
+        row = await s.get(DiagnosisRun, diag_id)
+    if row is None:
+        return None
+    return {"id": row.id, "service": row.service, "symptom": row.symptom or "",
+            "platform": row.platform,
+            "status": row.status, "stage": "done" if row.status == "done" else "failed",
+            "confirmation": row.confirmation or "pending",
+            "events": row.events or [], "result": row.result or {},
+            "conversation_id": row.conversation_id,
+            "created_at": row.created_at.isoformat() if row.created_at else None}
+
+
+async def confirm_diagnosis(diag_id: str, confirmed: bool, by: str = "admin") -> dict | None:
+    """记录用户对根因的确认/否认。未确认的结论不得用来启动修复(计划创建会校验)。"""
+    async with db.async_session() as s:
+        row = await s.get(DiagnosisRun, diag_id)
+        if row is None:
+            return None
+        row.confirmation = "confirmed" if confirmed else "rejected"
+        row.confirmed_at = datetime.now()
+        row.confirmed_by = by
+        await s.commit()
+        return {"id": row.id, "confirmation": row.confirmation,
+                "confirmed_at": row.confirmed_at.isoformat(timespec="seconds")}
+
+
+async def find_confirmed_diagnosis(conversation_id: int,
+                                   service: str) -> DiagnosisRun | None:
+    """这个会话里、针对这个服务、用户已确认的最近一次诊断——计划创建的门槛。"""
+    async with db.async_session() as s:
+        stmt = (select(DiagnosisRun)
+                .where(DiagnosisRun.conversation_id == conversation_id,
+                       DiagnosisRun.root_cause_service == service,
+                       DiagnosisRun.confirmation == "confirmed",
+                       DiagnosisRun.status == "done")
+                .order_by(DiagnosisRun.created_at.desc()).limit(1))
+        return (await s.execute(stmt)).scalars().first()
+
+
+async def find_latest_confirmed_diagnosis(conversation_id: int) -> DiagnosisRun | None:
+    """会话内最近一次已确认根因的诊断(修复 agent 派单用,不限服务——用户说"修复"
+    时不该逼他再报一遍服务名,最近确认的那单就是要修的)。"""
+    async with db.async_session() as s:
+        stmt = (select(DiagnosisRun)
+                .where(DiagnosisRun.conversation_id == conversation_id,
+                       DiagnosisRun.confirmation == "confirmed",
+                       DiagnosisRun.status == "done",
+                       DiagnosisRun.verdict.in_(("root_cause", "critical_failure")))
+                .order_by(DiagnosisRun.created_at.desc()).limit(1))
+        return (await s.execute(stmt)).scalars().first()

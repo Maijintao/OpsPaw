@@ -1220,7 +1220,7 @@ def _prune_by_causality(raw: list[dict], edges: dict, callers: dict) -> tuple[li
     return kept, dropped
 
 
-async def scan_platforms(now: float | None = None) -> dict:
+async def scan_platforms(now: float | None = None, platform: str | None = None) -> dict:
     """扫所有启用平台。返回 {status, anchors, note}:
     - available:有可疑锚点;
     - clear:平台健康,各服务与自身历史分布比都在正常范围;
@@ -1235,7 +1235,7 @@ async def scan_platforms(now: float | None = None) -> dict:
     except Exception as e:  # noqa: BLE001
         return {"status": "no_data", "anchors": [],
                 "note": f"接入平台注册表不可读:{type(e).__name__}"}
-    enabled = [r for r in rows if r.enabled]
+    enabled = [r for r in rows if r.enabled and (not platform or r.name == platform)]
     if not enabled:
         return {"status": "no_data", "anchors": [], "note": "没有启用的接入平台"}
     anchors: list[dict] = []
