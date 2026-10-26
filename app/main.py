@@ -103,3 +103,8 @@ async def repair_page(repair_id: str) -> FileResponse:
 @app.get("/incident/{iid}", include_in_schema=False)
 async def incident_page(iid: int) -> FileResponse:
     return FileResponse(_STATIC / "incident.html")
+
+
+@app.get("/alerts", include_in_schema=False)
+async def alerts_page() -> FileResponse:
+    return FileResponse(_STATIC / "alerts.html")
