@@ -23,6 +23,7 @@ from app.api.admin import router as admin_router
 from app.api.jobs import router as jobs_router
 from app.api.observability import router as observability_router
 from app.api.settings import router as settings_router
+from app.api.topics import router as topics_router
 
 
 @asynccontextmanager
@@ -65,6 +66,7 @@ app.include_router(admin_router)
 app.include_router(jobs_router)
 app.include_router(observability_router)
 app.include_router(settings_router)
+app.include_router(topics_router)
 
 _STATIC = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=_STATIC), name="static")
@@ -126,3 +128,8 @@ async def admin_page() -> FileResponse:
 @app.get("/observability", include_in_schema=False)
 async def observability_page() -> FileResponse:
     return FileResponse(_STATIC / "observability.html")
+
+
+@app.get("/topics", include_in_schema=False)
+async def topics_page() -> FileResponse:
+    return FileResponse(_STATIC / "topics.html")

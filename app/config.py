@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_base_url: str = ""
+    classifier_base_url: str = "http://127.0.0.1:8110"
 
 
 settings = Settings()
