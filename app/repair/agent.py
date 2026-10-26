@@ -35,6 +35,7 @@ from app.repair import catalog, gateway, plans, symptom
 logger = logging.getLogger("app.repair")
 
 _RUNS: dict[str, dict] = {}
+_TASKS: dict[str, asyncio.Task] = {}
 MAX_RUNS = 100   # 同诊断 runner:内存只做热缓存,终态落库
 
 # 修复单全局并发闸。写动作本身有连接器级单并发锁(plans._LOCKS),这里是防
@@ -69,6 +70,16 @@ def _emit(run: dict, stage: str, detail: str) -> None:
 
 def get(repair_id: str) -> dict | None:
     return _RUNS.get(repair_id)
+
+
+def stop(repair_id: str) -> bool:
+    """只允许在现场只读调查阶段停止；写操作开始后必须等验证完成。"""
+    run = _RUNS.get(repair_id)
+    task = _TASKS.get(repair_id)
+    if run is None or task is None or task.done() or run.get("stage") != "scene":
+        return False
+    task.cancel()
+    return True
 
 
 async def start_for_diagnosis(diag_id: str) -> dict:
@@ -327,7 +338,7 @@ def start(diag_run: dict, target_id: int, target_name: str, connector_id: str,
         terminal = [k for k, v in _RUNS.items() if v.get("status") in ("done", "failed")]
         for k in terminal[:len(_RUNS) - MAX_RUNS]:
             _RUNS.pop(k, None)
-    asyncio.create_task(_safe_run(run, diag_run))
+    _TASKS[repair_id] = asyncio.create_task(_safe_run(run, diag_run))
     return repair_id
 
 
@@ -336,6 +347,10 @@ async def _safe_run(run: dict, diag_run: dict) -> None:
         async with _SEM:
             run["result"] = await _run(run, diag_run)
         run["status"] = "done"
+    except asyncio.CancelledError:
+        run["status"] = "stopped"
+        run["result"] = run.get("result") or {"verdict": "stopped"}
+        _emit(run, "stopped", "现场只读调查已停止，未发起修复写操作")
     except Exception as e:  # noqa: BLE001  修复任务不许静默死,错误如实落终态
         logger.exception("修复任务失败 service=%s", run.get("service"))
         run["status"] = "failed"
@@ -357,6 +372,7 @@ async def _safe_run(run: dict, diag_run: dict) -> None:
                                        (run.get("result") or {}).get("action"))
         except Exception:  # noqa: BLE001
             logger.warning("事故联动(修复)失败 repair=%s", run.get("id"), exc_info=True)
+        _TASKS.pop(run.get("id"), None)
 
 
 def _diag_context(diag_run: dict) -> str:
