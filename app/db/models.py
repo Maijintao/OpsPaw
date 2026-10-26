@@ -245,6 +245,66 @@ class RepairRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+
+class Sentinel(Base):
+    """哨兵:一个"谁触发、查什么"的入口。
+
+    为什么要有它:现在诊断只能由人在对话里发起,而真实值班是**告警先响**。
+    哨兵就是那根接线——外部告警系统 POST 到 /api/sentinels/hook/{token},
+    我们按它配的范围发起一次诊断,把结论记回这条哨兵。
+
+    字段说明:
+    - services: 限定服务名列表;空 = 交给平台粗筛自己找
+    - checks:   限定关注哪几维(error/latency/calls/cpu/memory);
+                诊断仍会看全维,这里只作为"症状描述"传给归因,影响它先看什么
+    - token:    webhook 路径里的凭证,泄露就换一个(重新生成)
+    """
+    __tablename__ = "sentinels"
+
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer(), "sqlite"),
+                                    primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128))
+    target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    services: Mapped[list] = mapped_column(JSON, default=list)
+    checks: Mapped[list] = mapped_column(JSON, default=list)
+    token: Mapped[str] = mapped_column(String(64), unique=True)
+    # 触发方式(可多选同时生效):
+    #   schedule  定时巡检 —— 每 interval_min 分钟自动跑一遍诊断(夜莺那种告警引擎)
+    #   webhook   外部告警 —— 告警平台 POST 进来就触发
+    #   threshold 指标阈值 —— 自己查 Prometheus,超了才触发(不依赖外部告警平台)
+    triggers: Mapped[dict] = mapped_column(JSON, default=dict)
+    # 收敛策略:静默期内同一条接入只触发一次(防告警风暴);hours 是生效时段
+    policy: Mapped[dict] = mapped_column(JSON, default=dict)
+    # 检测出来之后怎么办:diagnose=只诊断 / forward=自动转发到指定接口 / repair=自动派修复
+    action: Mapped[str] = mapped_column(String(32), server_default="diagnose")
+    forward_url: Mapped[str] = mapped_column(String(512), server_default="")
+    enabled: Mapped[int] = mapped_column(Integer, server_default="1")
+    trigger_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    last_fired_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_triggered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_diagnosis_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+
+class IntakeEvent(Base):
+    """一条接入的触发记录:什么时候、因为什么触发、诊断出了什么结论。
+
+    为什么单独一张表:值班员最常问的是"它刚才为什么报警、结论是什么",
+    没有这条流水,接入就只是个配置页,看不到发生过什么。
+    """
+    __tablename__ = "intake_events"
+
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer(), "sqlite"),
+                                    primary_key=True, autoincrement=True)
+    intake_id: Mapped[int] = mapped_column(Integer, index=True)
+    fired_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    trigger: Mapped[str] = mapped_column(String(24))   # schedule/webhook/threshold/manual
+    service: Mapped[str] = mapped_column(String(128), default="")
+    diagnosis_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    skipped: Mapped[str | None] = mapped_column(String(64), nullable=True)  # 被静默/停用时记原因
+
+
 class DiagnosisRun(Base):
     """根因分析任务存档:诊断层 v0 的 run 只存内存,进程重启卡片就查无此单。
     落库后聊天卡片历史回放/刷新/跨天都能拿到完整结论;终态才写库(进行中的轮询走内存)。"""

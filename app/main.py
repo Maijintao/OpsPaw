@@ -14,6 +14,8 @@ from app.api.tools import router as tools_router
 from app.tools import registry
 from app.api.actions import router as actions_router
 from app.api.repair import router as repair_router
+from app.api.sentinels import ensure_tables as ensure_sentinel_tables
+from app.api.sentinels import router as sentinels_router
 
 
 @asynccontextmanager
@@ -25,6 +27,7 @@ async def lifespan(app: FastAPI):
     await repository.ensure_diagnosis_table()
     await repository.ensure_repair_tables()
     await repository.ensure_repair_runs_table()
+    await ensure_sentinel_tables()
     await runtime.init_graph()
     registry.scan_builtin()
     from app.api.targets import heal_loop
@@ -46,6 +49,7 @@ app.include_router(conversations_router)
 app.include_router(tools_router)
 app.include_router(actions_router)
 app.include_router(repair_router)
+app.include_router(sentinels_router)
 
 _STATIC = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=_STATIC), name="static")
