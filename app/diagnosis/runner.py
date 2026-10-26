@@ -218,6 +218,11 @@ async def _safe_run(run: dict, service: str, symptom: str,
             await repository.save_diagnosis_run(run)
         except Exception:  # noqa: BLE001  落库失败已在 save 内告警,这里再兜一层
             logger.warning("诊断任务 %s 存档异常", run.get("id"), exc_info=True)
+        try:
+            from app.api import incidents
+            await incidents.on_diagnosed(run.get("id", ""), run)
+        except Exception:  # noqa: BLE001  事故联动失败不影响诊断结果
+            logger.warning("事故联动(诊断)失败 diag=%s", run.get("id"), exc_info=True)
 
 
 async def _run(run: dict, service: str, symptom: str,
