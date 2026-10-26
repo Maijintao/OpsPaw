@@ -404,6 +404,17 @@ def start_scheduler() -> None:
         _scheduler = asyncio.create_task(scheduler_loop())
 
 
+async def stop_scheduler() -> None:
+    global _scheduler
+    if _scheduler is not None and not _scheduler.done():
+        _scheduler.cancel()
+        try:
+            await _scheduler
+        except asyncio.CancelledError:
+            pass
+    _scheduler = None
+
+
 # ---------- 接口 ----------
 
 def _public(s: Sentinel, events: list[dict] | None = None) -> dict:

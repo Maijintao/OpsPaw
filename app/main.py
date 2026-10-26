@@ -15,6 +15,8 @@ from app.tools import registry
 from app.api.actions import router as actions_router
 from app.api.repair import router as repair_router
 from app.api.sentinels import ensure_tables as ensure_sentinel_tables
+from app.api.sentinels import start_scheduler as start_sentinel_scheduler
+from app.api.sentinels import stop_scheduler as stop_sentinel_scheduler
 from app.api.sentinels import router as sentinels_router
 
 
@@ -30,6 +32,7 @@ async def lifespan(app: FastAPI):
     await ensure_sentinel_tables()
     await runtime.init_graph()
     registry.scan_builtin()
+    start_sentinel_scheduler()
     from app.api.targets import heal_loop
     healing = asyncio.create_task(heal_loop())
     try:
@@ -38,6 +41,7 @@ async def lifespan(app: FastAPI):
         healing.cancel()
         with suppress(asyncio.CancelledError):
             await healing
+        await stop_sentinel_scheduler()
         await runtime.close_graph()
         await engine.dispose()
 
