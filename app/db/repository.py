@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import case, delete, func, select, update
 
 import app.db.base as db
-from app.db.models import Conversation, Message, Ticket, ToolAuditLog, Target
+from app.db.models import Conversation, Message, Ticket, ToolAuditLog, Target, DiagnosisRun
 
 _TICKET_SEQ = 0
 
@@ -272,3 +272,70 @@ async def update_target_sources(target_id: int, sources: list) -> Target | None:
         await s.commit()
         await s.refresh(row)
         return row
+
+
+async def ensure_diagnosis_table() -> None:
+    """diagnosis_runs 启动自建(同 ensure_settings_table 范式:checkfirst,只补建不迁移)。
+    新增的 platform / confirmation 两列用 ALTER 补——老库里已有诊断存档,不能重建。"""
+    from sqlalchemy import inspect, text
+
+    def _ensure(sync_conn) -> None:
+        DiagnosisRun.__table__.create(sync_conn, checkfirst=True)
+        insp = inspect(sync_conn)
+        have = {c["name"] for c in insp.get_columns("diagnosis_runs")}
+        add = {"platform": "VARCHAR(128)",
+               "confirmation": "VARCHAR(16) DEFAULT 'pending'",
+               "confirmed_at": "DATETIME",
+               "confirmed_by": "VARCHAR(64)"}
+        for name, ddl in add.items():
+            if name not in have:
+                sync_conn.execute(text(f"ALTER TABLE diagnosis_runs ADD COLUMN {name} {ddl}"))
+
+    async with db.engine.begin() as conn:
+        await conn.run_sync(_ensure)
+
+
+async def recent_incident_windows(since: datetime, until: datetime) -> list[tuple[float, float]]:
+    """最近被判为真故障(root_cause/critical_failure)的诊断采样窗 [window_start, window_end]。
+
+    用途:基线分布剔除这些时段。故障期的指标值会混进"过去 24 小时"的历史分布,把
+    正常范围的估计整体抬高——同一天里第二次发生同款故障时,当前值落在被污染的
+    "正常范围"内,粗筛失明(实测:早间注入的 cart 故障把历史错误率 max 抬到 0.33%,
+    下午同款故障 0.14% 判成正常)。诊断存档本身就是"哪些时段出过事"的权威记录,
+    拿它洗基线是零成本的。until 用来约束"只看诊断时刻之前已知的故障"(离线回放
+    把时钟拨回过去时,不能拿未来才发生的故障洗过去的基线)。库不可读返回空——
+    基线洗刷是增强,失败不拖垮粗筛。
+
+    **按窗口时间筛,不按行创建时间筛**(2026-10-17 实测修正):created_at 由
+    `server_default=func.now()` 落库——sqlite 上是 UTC,MySQL 上是会话时区,而窗口
+    用的是本地 epoch,两者可能差整整一个时区。旧实现拿 created_at 当边界,实测在
+    回放里把 8 小时**之后**才发生的故障窗也剔了(时钟拨回 14:42,却剔到 21:59 的窗),
+    同时把 24 小时历史最早那 8 小时的故障窗漏掉——两个方向的错都直接改历史分布。
+    现在只用一个宽松到能盖住任何时区差的粗筛把候选行捞出来,再按窗口自身的 epoch
+    判"与 [since, until] 是否重叠",语义与时区都对齐。"""
+    lo, hi = since.timestamp(), until.timestamp()
+    margin = 86400          # 粗筛放宽一天:只用来少读行,不参与判定
+    out: list[tuple[float, float]] = []
+    try:
+        async with db.async_session() as s:
+            rows = (await s.execute(
+                select(DiagnosisRun)
+                .where(DiagnosisRun.verdict.in_(("root_cause", "critical_failure")))
+                .where(DiagnosisRun.created_at >= since - timedelta(seconds=margin))
+                .where(DiagnosisRun.created_at <= until + timedelta(seconds=margin))
+            )).scalars().all()
+        for r in rows:
+            dq = ((r.result or {}).get("data_quality") or {}).get("trace") or {}
+            ws, we = dq.get("window_start"), dq.get("window_end")
+            if not (ws and we):
+                continue
+            ws, we = float(ws), float(we)
+            if we <= ws:
+                continue
+            if we <= lo or ws >= hi:      # 与查询区间不重叠
+                continue
+            out.append((ws, we))
+    except Exception as e:  # noqa: BLE001
+        import logging
+        logging.getLogger("app").warning("诊断窗读取失败(%s),基线不剔除故障时段", e)
+    return out

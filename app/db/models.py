@@ -90,3 +90,26 @@ class Target(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+
+class DiagnosisRun(Base):
+    """根因分析任务存档:诊断层 v0 的 run 只存内存,进程重启卡片就查无此单。
+    落库后聊天卡片历史回放/刷新/跨天都能拿到完整结论;终态才写库(进行中的轮询走内存)。"""
+    __tablename__ = "diagnosis_runs"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    conversation_id: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), nullable=True)
+    service: Mapped[str] = mapped_column(String(128))
+    symptom: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    platform: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(16))   # done / failed(queued/running 不落库)
+    verdict: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    root_cause_service: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # 用户对根因的确认:诊断结论在确认前只是系统分析,不能拿它启动修复
+    confirmation: Mapped[str] = mapped_column(String(16), server_default="pending")
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    confirmed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    events: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
