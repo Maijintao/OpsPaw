@@ -190,3 +190,73 @@ async def list_targets() -> list[Target]:
     async with db.async_session() as s:
         rows = (await s.execute(select(Target).order_by(Target.id))).scalars().all()
         return list(rows)
+
+
+async def ensure_targets_table() -> None:
+    """项目没有迁移框架,历史建表走 sql/ 手工 DDL;这里只对新表做启动自建:
+    checkfirst=True 内部先查表是否存在,只补建缺失的 targets 一张,已有表一概不碰。
+
+    结构对不上(表里还是旧的双列 URL 版、没有 sources 列)时重建——targets 表当日成立、
+    无存量数据,不值得写迁移;重建前查一遍行数,有数据就不动表只告警,宁可起不来也不删人的配置。"""
+    import logging
+
+    from sqlalchemy import inspect, text
+
+    def _ensure(sync_conn) -> None:
+        insp = inspect(sync_conn)
+        if not insp.has_table("targets"):
+            Target.__table__.create(sync_conn)
+            return
+        cols = {c["name"] for c in insp.get_columns("targets")}
+        if "cluster" not in cols:      # 多云分组列:老库补一列,不重建表、不动数据
+            sync_conn.execute(text(
+                "ALTER TABLE targets ADD COLUMN cluster VARCHAR(64) DEFAULT ''"))
+        if "sources" in cols:
+            return
+        n_rows = sync_conn.execute(text("SELECT COUNT(*) FROM targets")).scalar() or 0
+        if n_rows:
+            logging.getLogger("app").error(
+                "targets 表是旧结构且有 %s 行数据,不自动重建;请手工迁移后重启", n_rows)
+            return
+        Target.__table__.drop(sync_conn)
+        Target.__table__.create(sync_conn)
+
+    async with db.engine.begin() as conn:
+        await conn.run_sync(_ensure)
+
+
+async def create_target(name: str, sources: list, cluster: str = "") -> Target:
+    async with db.async_session() as s:
+        row = Target(name=name, sources=sources, cluster=cluster or "")
+        s.add(row)
+        await s.commit()
+        await s.refresh(row)
+        return row
+
+
+async def update_target(target_id: int, name: str, sources: list,
+                        cluster: str = "") -> Target | None:
+    async with db.async_session() as s:
+        row = await s.get(Target, target_id)
+        if row is None:
+            return None
+        row.name, row.sources = name, sources
+        row.cluster = cluster or ""
+        await s.commit()
+        await s.refresh(row)
+        return row
+
+
+async def get_target(target_id: int) -> Target | None:
+    async with db.async_session() as s:
+        return await s.get(Target, target_id)
+
+
+async def delete_target(target_id: int) -> bool:
+    async with db.async_session() as s:
+        row = await s.get(Target, target_id)
+        if row is None:
+            return False
+        await s.delete(row)
+        await s.commit()
+        return True

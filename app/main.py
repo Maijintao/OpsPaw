@@ -47,3 +47,7 @@ async def tools_page():
 
 from app.api.extract import router as extract_router
 app.include_router(extract_router)
+
+
+from app.api.targets import router as targets_router
+app.include_router(targets_router)
