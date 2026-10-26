@@ -305,6 +305,62 @@ class IntakeEvent(Base):
     skipped: Mapped[str | None] = mapped_column(String(64), nullable=True)  # 被静默/停用时记原因
 
 
+
+class Incident(Base):
+    """事故:一次故障从告警到闭环的整条流水线的挂载点。
+
+    为什么要有它:一次故障会让多条哨兵各自触发诊断,界面上就是几张孤立卡片;
+    没有"一起事故"这个对象,降噪(几条告警并成一起)、复盘、认领升级都无从谈起。
+    并单/拆单的判据在 app/api/incidents.py(确定性判据,零阈值):
+    - 新告警指向的服务落在某未关闭事故的 scope(症状/根因/诊断子图服务集)里 → 并入;
+    - 诊断完成后根因服务与另一未关闭事故相同 → 后者并入前者(同根因=同一起故障);
+    - 宁可漏并不可错并:并错的每一条告警都能在详情页手动拆出成独立事故。
+    等级语义(不是拍数值,是结论语义的映射,P0 只留给人工标记):
+    确诊故障(root_cause/critical_failure)=P1;有异常未定位(impact/victims_only)=P2;
+    其余(未确诊/clear)=P3;severity 可人工改。
+    """
+    __tablename__ = "incidents"
+
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer(), "sqlite"),
+                                    primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(192), default="疑似故障")
+    severity: Mapped[str] = mapped_column(String(4), server_default="P3")
+    # open(诊断中) → diagnosed(已定位) → mitigating(修复中) → resolved(已解决) → closed(已关闭)
+    status: Mapped[str] = mapped_column(String(16), server_default="open", index=True)
+    platform: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    service: Mapped[str] = mapped_column(String(128), default="")     # 症状服务(触发时的入口)
+    root_cause_service: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    fault_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    diagnosis_id: Mapped[str | None] = mapped_column(String(16), nullable=True)  # 首个诊断
+    scope: Mapped[list] = mapped_column(JSON, default=list)   # 并单判据用:本事故覆盖的服务集
+    alert_count: Mapped[int] = mapped_column(Integer, server_default="1")  # 并入的告警条数(降噪口径)
+    note: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+
+class IncidentEvent(Base):
+    """事故时间线:告警并入、诊断结论、修复回执、状态变更、拆单,各记一行。
+
+    详情页按时间铺开就是事故的完整叙事;复盘(第三期)的直接原料。
+    kind: alert / diagnosis / repair / status / split / note
+    detail: {…} 各类事件自带字段(告警带 intake_event_id/sentinel 名,诊断带 verdict/根因)
+    """
+    __tablename__ = "incident_events"
+
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer(), "sqlite"),
+                                    primary_key=True, autoincrement=True)
+    incident_id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer(), "sqlite"),
+                                             index=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    # 指向的对象 id(诊断 id/修复 id/告警流水 id):并单、详情页反查全靠它,
+    # 放独立列而不是埋在 JSON 里——跨 sqlite/MySQL 的 JSON 查询没有可移植写法
+    ref_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class DiagnosisRun(Base):
     """根因分析任务存档:诊断层 v0 的 run 只存内存,进程重启卡片就查无此单。
     落库后聊天卡片历史回放/刷新/跨天都能拿到完整结论;终态才写库(进行中的轮询走内存)。"""

@@ -18,6 +18,7 @@ from app.api.sentinels import ensure_tables as ensure_sentinel_tables
 from app.api.sentinels import start_scheduler as start_sentinel_scheduler
 from app.api.sentinels import stop_scheduler as stop_sentinel_scheduler
 from app.api.sentinels import router as sentinels_router
+from app.api.incidents import router as incidents_router
 
 
 @asynccontextmanager
@@ -30,6 +31,7 @@ async def lifespan(app: FastAPI):
     await repository.ensure_repair_tables()
     await repository.ensure_repair_runs_table()
     await ensure_sentinel_tables()
+    await repository.ensure_incident_tables()
     await runtime.init_graph()
     registry.scan_builtin()
     start_sentinel_scheduler()
@@ -54,6 +56,7 @@ app.include_router(tools_router)
 app.include_router(actions_router)
 app.include_router(repair_router)
 app.include_router(sentinels_router)
+app.include_router(incidents_router)
 
 _STATIC = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=_STATIC), name="static")
@@ -95,3 +98,8 @@ async def diagnosis_page():
 @app.get("/repair/{repair_id}", include_in_schema=False)
 async def repair_page(repair_id: str) -> FileResponse:
     return FileResponse(_STATIC / "repair.html")
+
+
+@app.get("/incident/{iid}", include_in_schema=False)
+async def incident_page(iid: int) -> FileResponse:
+    return FileResponse(_STATIC / "incident.html")

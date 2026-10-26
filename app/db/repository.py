@@ -746,3 +746,16 @@ async def latest_repair_run_for_diagnosis(diag_id: str) -> dict | None:
     if row is None:
         return None
     return {"id": row.id, "status": row.status}
+
+
+async def ensure_incident_tables() -> None:
+    """incidents / incident_events 启动自建(同 ensure_diagnosis_table 范式:
+    checkfirst,只补建不迁移)。"""
+    from app.db.models import Incident, IncidentEvent
+
+    def _ensure(sync_conn) -> None:
+        Incident.__table__.create(sync_conn, checkfirst=True)
+        IncidentEvent.__table__.create(sync_conn, checkfirst=True)
+
+    async with db.engine.begin() as conn:
+        await conn.run_sync(_ensure)

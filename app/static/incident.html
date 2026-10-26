@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpsPaw · 事故详情</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'><rect x='2' y='2' width='4' height='4' fill='%232b2632'/><rect x='10' y='2' width='4' height='4' fill='%232b2632'/><rect x='2' y='4' width='12' height='9' fill='%232b2632'/><rect x='3' y='3' width='2' height='3' fill='%23ff9f57'/><rect x='11' y='3' width='2' height='3' fill='%23ff9f57'/><rect x='3' y='5' width='10' height='7' fill='%23ff9f57'/><rect x='5' y='7' width='1' height='2' fill='%232b2632'/><rect x='10' y='7' width='2' height='1' fill='%23ff8095'/></svg>" />
+  <style>
+    :root {
+      --ink: #2b2632;
+      --fur: #ff9f57;
+      --coral: #ff7a59;
+      --cream: #fff6e6;
+      --paper: #fffaf0;
+      --muted: #9b8f86;
+      --error: #d6455a;
+      --online: #5fcf6a;
+      --shadow: 4px 4px 0 var(--ink);
+      --shadow-sm: 3px 3px 0 var(--ink);
+      --shadow-lg: 8px 8px 0 var(--ink);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas,
+        "PingFang SC", "Microsoft YaHei", monospace;
+      color: var(--ink);
+      background-color: #f7d9a8;
+      background-image:
+        linear-gradient(rgba(43,38,50,0.05) 2px, transparent 2px),
+        linear-gradient(90deg, rgba(43,38,50,0.05) 2px, transparent 2px);
+      background-size: 24px 24px;
+      padding: 24px 16px 64px;
+    }
+    .wrap { max-width: 980px; margin: 0 auto; }
+
+    .topbar {
+      background: var(--cream); border: 4px solid var(--ink); box-shadow: var(--shadow-lg);
+      padding: 14px 18px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .topbar .logo { font-weight: 700; font-size: 16px; }
+    .topbar .sp { flex: 1; }
+    .topbar a.back {
+      border: 3px solid var(--ink); background: var(--paper); color: var(--ink);
+      padding: 6px 12px; font-size: 12px; text-decoration: none; box-shadow: var(--shadow-sm);
+    }
+    .topbar a.back:hover { background: #ffedd6; }
+
+    .card {
+      background: var(--paper); border: 4px solid var(--ink); box-shadow: var(--shadow-lg);
+      padding: 18px; margin-top: 18px;
+    }
+    .card h2 { margin: 0 0 12px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+
+    .sev {
+      display: inline-block; border: 3px solid var(--ink); padding: 4px 10px;
+      font-size: 14px; font-weight: 700; background: var(--cream);
+    }
+    .sev.P0 { background: var(--error); color: #fff; }
+    .sev.P1 { background: var(--coral); color: #fff; }
+    .sev.P2 { background: #ffe9c9; }
+    .sev.P3 { background: #e8e8e8; color: #555; }
+    .status-pill {
+      display: inline-block; border: 2.5px solid var(--ink); padding: 2px 8px;
+      font-size: 12px; font-weight: 700; background: var(--cream);
+    }
+    .status-pill.open, .status-pill.diagnosed { background: #ffefc9; }
+    .status-pill.mitigating { background: #ffe0e0; }
+    .status-pill.resolved { background: #d9f2d0; }
+    .status-pill.closed, .status-pill.merged { background: #e8e8e8; color: #555; }
+
+    .act {
+      border: 3px solid var(--ink); background: var(--paper); color: var(--ink);
+      padding: 5px 11px; font: inherit; font-size: 12px; font-weight: 700;
+      box-shadow: 2px 2px 0 var(--ink); cursor: pointer;
+    }
+    .act:hover { background: #ffe9c9; }
+    .act:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--ink); }
+    .act.primary { background: var(--coral); color: #fff; }
+    .act.primary:hover { background: #ff8f70; }
+
+    /* OpsPaw 自绘下拉(原生 select 皮肤配不上画风)——等级选择用 */
+    .picker { position: relative; display: inline-block; }
+    .picker-btn {
+      display: flex; align-items: center; gap: 8px; min-width: 64px;
+      border: 3px solid var(--ink); background: var(--paper); color: var(--ink);
+      box-shadow: 2px 2px 0 var(--ink); padding: 4px 8px;
+      font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .picker-btn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--ink); }
+    .picker-btn .caret { margin-left: auto; font-style: normal; font-size: 10px; }
+    .picker-menu {
+      position: absolute; top: calc(100% + 6px); left: 0; z-index: 40;
+      min-width: 100%; border: 3px solid var(--ink); background: var(--paper);
+      box-shadow: 4px 4px 0 var(--ink);
+    }
+    .picker-menu button {
+      display: block; width: 100%; text-align: left; padding: 6px 10px;
+      border: 0; background: transparent; color: var(--ink);
+      font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap;
+    }
+    .picker-menu button:hover { background: #ffe9c9; }
+    .picker-menu button.on { background: var(--coral); color: #fff; font-weight: 700; }
+
+    /* 概况卡:字段名 + 竖线 + 说明 的 Excel 式网格(与诊断详情同一套表样式) */
+    .px-grid { border: 2px solid var(--ink); background: var(--paper); }
+    .px-row { display: grid; grid-template-columns: 9em 1fr;
+              border-top: 2px dashed rgba(43,38,50,.25); }
+    .px-row:first-child { border-top: none; }
+    .px-label { padding: 7px 12px; border-right: 2px solid rgba(43,38,50,.5);
+                font-size: 12.5px; font-weight: 700; letter-spacing: .5px; }
+    .px-text { padding: 7px 12px; font-size: 13px; line-height: 1.8; word-break: break-word; }
+
+    /* 时间线 */
+    .tl { display: flex; flex-direction: column; gap: 6px; }
+    .tl-row { display: flex; align-items: baseline; gap: 10px; border: 2.5px solid var(--ink);
+              background: var(--cream); padding: 6px 10px; font-size: 12.5px; }
+    .tl-t { color: var(--muted); font-size: 11px; flex: none; }
+    .tl-k { border: 2px solid var(--ink); background: var(--paper); font-size: 10.5px;
+            padding: 0 6px; flex: none; font-weight: 700; }
+    .tl-k.alert { background: #ffe0e0; }
+    .tl-k.diagnosis { background: #ffefc9; }
+    .tl-k.repair { background: #d9f2d0; }
+    .tl-k.status, .tl-k.split { background: #e8e8e8; color: #555; }
+    .tl-d { flex: 1; line-height: 1.7; word-break: break-word; }
+    .tl-row .act { flex: none; padding: 2px 8px; font-size: 11px; }
+
+    /* 关联诊断 / 修复回执:横排卡 */
+    .links { display: flex; flex-direction: column; gap: 8px; }
+    .link-row { display: flex; align-items: center; gap: 10px; border: 3px solid var(--ink);
+                background: var(--cream); padding: 8px 12px; font-size: 13px; }
+    .link-row b { font-size: 13px; }
+    .link-row .pill { border: 2px solid var(--ink); font-size: 10.5px;
+                      padding: 1px 7px; background: var(--paper); }
+    .link-row .pill.rc { background: var(--error); color: #fff; }
+    .link-row a { margin-left: auto; color: var(--ink); font-size: 12px; font-weight: 700; }
+    .empty { color: #b07818; font-size: 13px; }
+
+    /* 确认弹窗:与主界面 confirmDialog 同一套配方(mask + 描边卡 + 硬阴影),
+       替代原生 confirm——原生控件皮肤配不上画风 */
+    .modal-mask {
+      position: fixed; inset: 0; z-index: 50;
+      background: rgba(43, 38, 50, .45);
+      display: none; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .modal-mask.open { display: flex; }
+    .modal-card {
+      width: 100%; max-width: 420px;
+      background: var(--paper);
+      border: 4px solid var(--ink);
+      box-shadow: var(--shadow-lg);
+      padding: 20px;
+    }
+    .modal-card h3 { margin: 0 0 4px; font-size: 16px; color: var(--ink); }
+    .modal-card .sub { margin: 0 0 16px; font-size: 12px; color: var(--muted); }
+    .modal-card .actions { display: flex; gap: 8px; justify-content: flex-end; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <span class="logo">🐾 OpsPaw · 事故详情</span>
+      <span class="sp"></span>
+      <a class="back" href="/">← 回值班台</a>
+    </div>
+
+    <div class="card" id="head-card">
+      <h2><span id="ic-sev" class="sev P3">—</span>
+          <span id="ic-title">读取中…</span>
+          <span class="sp" style="flex:1"></span>
+          <span id="ic-status" class="status-pill open">—</span></h2>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <span style="font-size:11px; color:var(--muted); font-weight:700;">等级</span>
+        <div class="picker">
+          <button type="button" class="picker-btn" id="sev-btn">
+            <span id="sev-cur">—</span><i class="caret">▾</i>
+          </button>
+          <div class="picker-menu" id="sev-menu" hidden></div>
+        </div>
+        <span style="flex:1"></span>
+        <button type="button" class="act primary" id="btn-resolve">✔ 标记解决</button>
+        <button type="button" class="act" id="btn-close">关闭事故</button>
+        <button type="button" class="act" id="btn-reopen">↩ 重开</button>
+      </div>
+      <div class="meta" id="ic-note" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>📋 事故概况</h2>
+      <div class="px-grid" id="ic-grid"></div>
+    </div>
+
+    <div class="card">
+      <h2>🕒 时间线 <span style="font-size:11px;color:var(--muted);font-weight:400">
+        (并进来的每条告警都可以拆出去成独立事故——宁可漏并,不可错并)</span></h2>
+      <div class="tl" id="ic-tl"></div>
+    </div>
+
+    <div class="card">
+      <h2>🔍 关联诊断</h2>
+      <div class="links" id="ic-diags"></div>
+    </div>
+
+    <div class="card">
+      <h2>🔧 修复回执</h2>
+      <div class="links" id="ic-repairs"></div>
+    </div>
+  </div>
+
+  <div class="modal-mask" id="confirmMask">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+      <h3 id="confirmTitle">确认操作</h3>
+      <p class="sub" id="confirmText"></p>
+      <div class="actions">
+        <button type="button" class="act" id="confirmCancel">取消</button>
+        <button type="button" class="act primary" id="confirmOk">确认</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+  const IID = parseInt(location.pathname.split("/").pop(), 10);
+  const STATUS_TEXT = { open: "诊断中", diagnosed: "已定位", mitigating: "修复中",
+                        resolved: "已解决", closed: "已关闭", merged: "已并入" };
+  const ACTIVE = ["open", "diagnosed", "mitigating"];
+  let data = null;
+  let timer = null;
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g,
+      (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  }
+  function fmtTime(t) { return (t || "").replace("T", " ").slice(5, 19); }
+
+  async function load() {
+    try {
+      const r = await fetch("/api/incidents/" + IID);
+      data = await r.json();
+      if (data.error) {
+        document.getElementById("ic-title").textContent = "找不到这起事故(#" + IID + ")";
+        return;
+      }
+      render();
+    } catch (e) { /* 网络抖动保持上一屏 */ }
+    // 未关闭的事故还在被后台推进(诊断/修复),开着页面就轻轮询
+    if (timer) clearInterval(timer);
+    timer = setInterval(() => {
+      if (!data || !data.incident || !ACTIVE.includes(data.incident.status)) {
+        clearInterval(timer); timer = null; return;
+      }
+      load();
+    }, 10000);
+  }
+
+  function render() {
+    const inc = data.incident;
+    const sev = document.getElementById("ic-sev");
+    sev.textContent = inc.severity;
+    sev.className = "sev " + inc.severity;
+    document.getElementById("ic-title").textContent = "#" + inc.id + " " + inc.title;
+    const st = document.getElementById("ic-status");
+    st.textContent = STATUS_TEXT[inc.status] || inc.status;
+    st.className = "status-pill " + inc.status;
+    document.getElementById("sev-cur").textContent = inc.severity;
+    document.getElementById("ic-note").innerHTML = inc.note
+      ? "备注:" + esc(inc.note) : "";
+    // 按钮只在对应状态亮:解决/关闭对未关闭事故;重开对已解决/已关闭
+    document.getElementById("btn-resolve").hidden = !ACTIVE.includes(inc.status);
+    document.getElementById("btn-close").hidden =
+      !ACTIVE.includes(inc.status) && inc.status !== "resolved";
+    document.getElementById("btn-reopen").hidden =
+      !["resolved", "closed"].includes(inc.status);
+
+    document.getElementById("ic-grid").innerHTML = [
+      ["状态", (STATUS_TEXT[inc.status] || inc.status) + "(" + inc.status + ")"],
+      ["症状服务", esc(inc.service || "(全平台)") + (inc.platform ? "@" + esc(inc.platform) : "")],
+      ["根因服务", inc.root_cause_service
+        ? "<b>" + esc(inc.root_cause_service) + "</b>" + (inc.fault_type
+          ? "(" + esc(inc.fault_type) + ")" : "") : "(未定位)"],
+      ["告警并单", "<b>" + (inc.alert_count || 1) + "</b> 条告警并成 1 起事故"],
+      ["覆盖服务", (inc.scope || []).length ? esc(inc.scope.join("、")) : "—"],
+      ["创建时间", fmtTime(inc.created_at)],
+      ["最近更新", fmtTime(inc.updated_at)],
+    ].map((r) => '<div class="px-row"><div class="px-label">' + r[0] +
+                 '</div><div class="px-text">' + r[1] + "</div></div>").join("");
+
+    document.getElementById("ic-tl").innerHTML = (data.events || []).map((e) => {
+      let d = "";
+      const t = e.detail || {};
+      if (e.kind === "alert")
+        d = "告警:" + esc(t.sentinel || "?") + "(" + esc(t.trigger) + ")指向 " +
+            esc(t.service || "(全平台)") + (t.merged ? ",并入本事故" : ",事故由此开启") +
+            (t.diagnosis_id ? ";发起诊断 <a href='/diagnosis/" + esc(t.diagnosis_id) +
+              "'>" + esc(t.diagnosis_id) + "</a>" : "");
+      else if (e.kind === "diagnosis")
+        d = "诊断 <a href='/diagnosis/" + esc(e.ref_id) + "'>" +
+            esc(e.ref_id) + "</a> 结论:" + esc(t.verdict || "?") +
+            (t.root_cause ? ",根因 <b>" + esc(t.root_cause) + "</b>" : "") +
+            (t.fault_type ? ",形态 " + esc(t.fault_type) : "") +
+            (t.source === "chat" ? "(来自值班对话)" : "");
+      else if (e.kind === "repair")
+        d = "修复 <a href='/repair/" + esc(t.repair_id) + "'>" +
+            esc(t.repair_id) + "</a>:" + esc(t.verdict || "…") +
+            (t.action ? ",动作 " + esc(t.action) : "");
+      else if (e.kind === "status")
+        d = (t.from ? esc(t.from) + " → " : "") + esc(t.to || "") +
+            (t.note ? ":" + esc(t.note) : "") +
+            (t.severity ? "等级 " + esc(t.severity.from) + " → " + esc(t.severity.to) : "") +
+            (t.merged_into ? "(并入事故 #" + t.merged_into + ")" : "");
+      else if (e.kind === "split")
+        d = t.into ? "一条告警被拆出为独立事故 #" + esc(t.into) : "本事故由拆单而来";
+      else d = esc(JSON.stringify(t));
+      return '<div class="tl-row"><span class="tl-t">' + fmtTime(e.created_at) +
+             '</span><span class="tl-k ' + esc(e.kind) + '">' + esc(e.kind) +
+             '</span><span class="tl-d">' + d + "</span>" +
+             (e.kind === "alert"
+               ? '<button type="button" class="act" data-split="' + e.id + '">拆单</button>' : "") +
+             "</div>";
+    }).join("") || '<span class="empty">还没有事件</span>';
+    document.querySelectorAll("[data-split]").forEach((b) =>
+      b.addEventListener("click", () => doSplit(parseInt(b.dataset.split, 10))));
+
+    document.getElementById("ic-diags").innerHTML = (data.diagnoses || []).map((d) =>
+      '<div class="link-row"><b>' + esc(d.id) + "</b>" +
+      '<span class="pill ' + (d.verdict === "root_cause" ? "rc" : "") + '">' +
+      esc(d.verdict || "…") + "</span>" +
+      (d.root_cause_service ? "根因 " + esc(d.root_cause_service) : "") +
+      (d.confirmation === "confirmed" ? " · 已确认" : "") +
+      "<a href='/diagnosis/" + esc(d.id) + "'>查看详情 →</a></div>"
+    ).join("") || '<span class="empty">这起事故还没有跑过诊断</span>';
+
+    document.getElementById("ic-repairs").innerHTML = (data.repairs || []).map((p) =>
+      '<div class="link-row"><b>' + esc(p.id) + "</b>" +
+      '<span class="pill">' + esc(p.verdict || "…") + "</span>" +
+      (p.action ? "动作 " + esc(p.action) : "") +
+      "<a href='/repair/" + esc(p.id) + "'>查看回执 →</a></div>"
+    ).join("") || '<span class="empty">这起事故还没有修复记录</span>';
+  }
+
+  async function setStatus(status, note) {
+    const label = { resolved: "标记解决", closed: "关闭", open: "重开" }[status] || status;
+    if (!(await confirmDialog("确认" + label + "这起事故?", label))) return;
+    await fetch("/api/incidents/" + IID + "/status", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: status, note: label + "(值班员手动)" }),
+    });
+    load();
+  }
+  async function doSplit(eventId) {
+    if (!(await confirmDialog("把这条告警拆出去成独立事故?(它和本事故可能不是同一故障)", "拆单"))) return;
+    const r = await fetch("/api/incidents/" + IID + "/split", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event_id: eventId }),
+    });
+    const out = await r.json();
+    if (out.new_incident) location.href = "/incident/" + out.new_incident;
+    load();
+  }
+
+  // 确认弹窗:主界面同款交互(确认/取消/点遮罩关闭/Esc 关闭),替代原生 confirm
+  let confirmResolve = null;
+  function confirmDialog(text, okLabel) {
+    const mask = document.getElementById("confirmMask");
+    document.getElementById("confirmText").textContent = text;
+    const ok = document.getElementById("confirmOk");
+    ok.textContent = okLabel || "确认";
+    mask.classList.add("open");
+    ok.focus();
+    return new Promise((resolve) => { confirmResolve = resolve; });
+  }
+  function settleConfirm(v) {
+    const mask = document.getElementById("confirmMask");
+    if (!mask.classList.contains("open")) return;
+    mask.classList.remove("open");
+    if (confirmResolve) { confirmResolve(v); confirmResolve = null; }
+  }
+  document.getElementById("confirmOk").addEventListener("click", () => settleConfirm(true));
+  document.getElementById("confirmCancel").addEventListener("click", () => settleConfirm(false));
+  document.getElementById("confirmMask").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) settleConfirm(false);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") settleConfirm(false);
+  });
+
+  // 等级下拉:自绘,和主界面同一套
+  (function initSev() {
+    const btn = document.getElementById("sev-btn");
+    const menu = document.getElementById("sev-menu");
+    menu.innerHTML = ["P0", "P1", "P2", "P3"].map((s) =>
+      '<button type="button" data-v="' + s + '">' + s + "</button>").join("");
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation(); menu.hidden = !menu.hidden;
+    });
+    menu.querySelectorAll("button").forEach((b) => b.addEventListener("click", async () => {
+      menu.hidden = true;
+      await fetch("/api/incidents/" + IID + "/severity", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ severity: b.dataset.v }),
+      });
+      load();
+    }));
+    document.addEventListener("click", () => { menu.hidden = true; });
+  })();
+
+  document.getElementById("btn-resolve").addEventListener("click", () => setStatus("resolved"));
+  document.getElementById("btn-close").addEventListener("click", () => setStatus("closed"));
+  document.getElementById("btn-reopen").addEventListener("click", () => setStatus("open"));
+  load();
+})();
+</script>
+</body>
+</html>
