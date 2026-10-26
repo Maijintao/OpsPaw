@@ -1,0 +1,37 @@
+dataset: "Otel"
+query_dataset: "Otel/test"
+
+llm_setting_agent:
+  max_token: 1024 # 2048 or more
+  MAX_RETRY: 3
+  model_path: "XXX" # your local model path
+  ad_peft_path: "./ppo_data/60/ad_agent/iter_0"
+  ft_peft_path: "./ppo_data/60/ft_agent/iter_0"
+  rcl_peft_path: "./ppo_data/60/rcl_agent/iter_0"
+
+llm_setting_interpreter:
+  max_token: 512
+
+
+# run mode: ppo_logging and normal
+# ppo_logging: cross_review -> refine -> reflect
+# normal: -> RAG -> few shot -> reasoning -> cross_review -> refine
+run_mode: normal
+
+# PPO training data
+# check if the dir exists
+prompt_file_path: "./ppo_data/60"
+answer_file_path: "./ppo_data/60"
+thinking_file_path: "./ppo_data/60"
+peft_file_path: "./ppo_data/60"
+iteration: 3  # 0/3/5/10 ...
+
+# after_ppo_answer_file_path: "./results/exp/test/iter_5"
+
+# scoring
+# check if the dir exists
+scoring_file_path: "./ppo_data/60" # e.g.: ./ppo_data/10/ad_scoring.csv
+
+# RAG relaterd setting
+# check if the dir exists
+reflection_file_path: "./reflection/60"

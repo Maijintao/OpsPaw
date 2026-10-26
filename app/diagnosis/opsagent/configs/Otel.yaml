@@ -1,0 +1,13 @@
+# OpsPaw otel-demo 服务的 OpsAgent 数据集注册(新增文件,OpsAgent 原文件未改动)。
+# 结构对齐 configs/Bank.yaml:instances 供 agent prompt 里的服务清单使用。
+instances: ['ad', 'cart', 'checkout', 'currency', 'email', 'flagd', 'frontend',
+            'frontend-proxy', 'frontend-web', 'image-provider', 'load-generator',
+            'payment', 'product-catalog', 'quote', 'recommendation', 'shipping']
+failure_types: ['resource exhaustion', 'network latency', 'service crash', 'queue backlog',
+                'cache failure', 'high cpu load']
+instance_descriptions: [
+
+]
+failure_type_descriptions: [
+
+]

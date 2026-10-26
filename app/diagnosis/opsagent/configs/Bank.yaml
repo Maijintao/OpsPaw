@@ -1,0 +1,8 @@
+instances: ['IG01', 'IG02', 'MG01', 'MG02', 'Mysql01', 'Mysql02', 'Redis01', 'Redis02', 'Tomcat01', 'Tomcat02', 'Tomcat03', 'Tomcat04', 'apache01', 'apache02']
+failure_types: ['high memory usage', 'network latency', 'network packet loss', 'high JVM CPU load', 'JVM Out of Memory (OOM) Heap', 'high disk I/O read usage', 'high disk space usage', 'high CPU usage']
+instance_descriptions: [
+
+]
+failure_type_descriptions: [
+
+]

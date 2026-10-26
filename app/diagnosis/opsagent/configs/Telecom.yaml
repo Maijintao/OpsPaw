@@ -1,0 +1,8 @@
+instances: ['os_001', 'os_002', 'os_003', 'os_004', 'os_005', 'os_006', 'os_007', 'os_008', 'os_009', 'os_010', 'os_011', 'os_012', 'os_013', 'os_014', 'os_015', 'os_016', 'os_017', 'os_018', 'os_019', 'os_020', 'os_021', 'os_022', 'db_001', 'db_002', 'db_003', 'db_004', 'db_005', 'db_006', 'db_007', 'db_008', 'db_009', 'db_010', 'db_011', 'db_012', 'db_013', 'docker_001', 'docker_002', 'docker_003', 'docker_004', 'docker_005', 'docker_006', 'docker_007', 'docker_008']
+failure_types: ['CPU fault', 'db close', 'db connection limit', 'network delay', 'network loss']
+instance_descriptions: [
+
+]
+failure_type_descriptions: [
+
+]

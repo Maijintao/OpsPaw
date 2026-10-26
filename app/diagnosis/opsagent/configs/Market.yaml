@@ -1,0 +1,8 @@
+instances: ['emailservice-0', 'emailservice2-0', 'emailservice-2', 'emailservice-1', 'adservice-0', 'adservice2-0', 'adservice-2', 'adservice-1', 'checkoutservice-0', 'checkoutservice2-0', 'checkoutservice-2', 'checkoutservice-1', 'paymentservice-0', 'paymentservice2-0', 'paymentservice-2', 'paymentservice-1', 'productcatalogservice-0', 'productcatalogservice2-0', 'productcatalogservice-2', 'productcatalogservice-1', 'shippingservice-0', 'shippingservice2-0', 'shippingservice-2', 'shippingservice-1', 'frontend-0', 'frontend2-0', 'frontend-2', 'frontend-1', 'recommendationservice-0', 'recommendationservice2-0', 'recommendationservice-2', 'recommendationservice-1', 'cartservice-0', 'cartservice2-0', 'cartservice-2', 'cartservice-1', 'currencyservice-0', 'currencyservice2-0', 'currencyservice-2', 'currencyservice-1', 'node-1', 'node-2', 'node-3', 'node-4', 'node-5', 'node-6']
+failure_types: ['container CPU load', 'container memory load', 'container network latency', 'container network packet corruption', 'container network packet retransmission', 'container packet loss', 'container process termination', 'container read I/O load', 'container write I/O load', 'node CPU load', 'node CPU spike', 'node disk read I/O consumption', 'node disk space consumption', 'node disk write I/O consumption', 'node memory consumption']
+instance_descriptions: [
+
+]
+failure_type_descriptions: [
+
+]
