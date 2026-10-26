@@ -462,3 +462,31 @@ async def find_latest_confirmed_diagnosis(conversation_id: int) -> DiagnosisRun 
                        DiagnosisRun.verdict.in_(("root_cause", "critical_failure")))
                 .order_by(DiagnosisRun.created_at.desc()).limit(1))
         return (await s.execute(stmt)).scalars().first()
+
+
+async def create_enrollment_token(token_id: str, target_id: int, token_hash: str,
+                                  expires_at: datetime) -> None:
+    async with db.async_session() as s:
+        s.add(RepairEnrollmentToken(token_id=token_id, target_id=target_id,
+                                    token_hash=token_hash, expires_at=expires_at))
+        await s.commit()
+
+
+async def get_enrollment_token(token_id: str) -> RepairEnrollmentToken | None:
+    async with db.async_session() as s:
+        return await s.get(RepairEnrollmentToken, token_id)
+
+
+async def mark_enrollment_used(token_id: str) -> None:
+    async with db.async_session() as s:
+        row = await s.get(RepairEnrollmentToken, token_id)
+        if row is not None and row.used_at is None:
+            row.used_at = datetime.now()
+            await s.commit()
+
+
+
+async def ensure_repair_tables() -> None:
+    """创建当前已接入的注册令牌表。"""
+    async with db.engine.begin() as conn:
+        await conn.run_sync(lambda c: RepairEnrollmentToken.__table__.create(c, checkfirst=True))

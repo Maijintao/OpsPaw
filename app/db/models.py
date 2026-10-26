@@ -92,6 +92,24 @@ class Target(Base):
     )
 
 
+
+class RepairEnrollmentToken(Base):
+    """修复连接器的一次性注册令牌:只存 hash,明文只在生成命令那一刻出现一次。
+
+    绑定平台(target_id)、带有效期、用完即废——命令泄漏了也只能换一次连接,
+    而且平台管理员随时能撤销。"""
+    __tablename__ = "repair_enrollment_tokens"
+
+    token_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    target_id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class DiagnosisRun(Base):
     """根因分析任务存档:诊断层 v0 的 run 只存内存,进程重启卡片就查无此单。
     落库后聊天卡片历史回放/刷新/跨天都能拿到完整结论;终态才写库(进行中的轮询走内存)。"""
