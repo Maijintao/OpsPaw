@@ -339,3 +339,47 @@ async def recent_incident_windows(since: datetime, until: datetime) -> list[tupl
         import logging
         logging.getLogger("app").warning("诊断窗读取失败(%s),基线不剔除故障时段", e)
     return out
+
+
+async def recent_change_signals(service: str, since: datetime, until: datetime) -> list[dict]:
+    """窗内变更信号(本产品自己的库,不是外部发布系统):"有人动过/申请动过这个服务"的痕迹。
+    - tickets:ticket_type='变更' 且描述里提到服务名的工单(变更表单落库,描述含服务名);
+    - tool_audit_logs:submit_change 工具调用且 arguments.service_id 命中(审计表,含被拦下的)。
+    服务匹配从宽:服务名是描述/参数的子串——宁可多报候选痕迹,由归因员结合证据判断,
+    不在这里做精确闸。库不可读时返回空——变更维是证据增强,失败不拖垮诊断。"""
+    out: list[dict] = []
+    svc = (service or "").strip().lower()
+    if not svc:
+        return out
+    try:
+        async with db.async_session() as s:
+            rows = (await s.execute(
+                select(Ticket)
+                .where(Ticket.ticket_type == "变更")
+                .where(Ticket.created_at >= since)
+                .where(Ticket.created_at <= until)
+                .order_by(Ticket.created_at.desc())
+                .limit(50))).scalars().all()
+            for t in rows:
+                if svc in (t.description or "").lower():
+                    out.append({"kind": "change_ticket", "ts": t.created_at.isoformat(),
+                                "detail": (t.description or "")[:160],
+                                "status": t.status})
+            audits = (await s.execute(
+                select(ToolAuditLog)
+                .where(ToolAuditLog.tool_name == "submit_change")
+                .where(ToolAuditLog.created_at >= since)
+                .where(ToolAuditLog.created_at <= until)
+                .order_by(ToolAuditLog.created_at.desc())
+                .limit(50))).scalars().all()
+            for a in audits:
+                args = a.arguments or {}
+                if svc in str(args.get("service_id") or "").lower():
+                    out.append({"kind": "change_request", "ts": a.created_at.isoformat(),
+                                "detail": f"变更申请(status={a.status})",
+                                "status": a.status})
+    except Exception:  # noqa: BLE001  变更维尽力而为,失败不打断诊断
+        import logging
+        logging.getLogger("app").warning("变更信号查询失败 service=%s", service, exc_info=True)
+        return []
+    return sorted(out, key=lambda x: x["ts"], reverse=True)
