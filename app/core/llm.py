@@ -56,8 +56,17 @@ class _CumulativeUsageChatOpenAI(ChatOpenAI):
 
 
 def _net_async_client():
-    """预留自定义 HTTP 客户端接入；当前由模型 SDK 管理连接。"""
-    return None
+    """录制/回放模式下,把 LLM 的异步 HTTP 客户端换成诊断层的 net 客户端,让 LLM 调用
+    也进录制/回放;否则返回 None(不传参,langchain 自建客户端,生产行为不变)。
+
+    为什么必须:回放只冻住走 net 的请求。LLM 走 langchain 自带的 httpx,不在录制里
+    ——"离线回放"照样联网打上游,同一份数据两次回放可能出两个结论,LLM 段永远无法
+    离线校准。这是"改判据→跑回放→看分数"闭环可信的前提。"""
+    from app.diagnosis import net
+    if not net.llm_client_enabled():
+        return None
+    return net.client(timeout=120.0)
+
 
 
 def get_chat_model(streaming: bool = False, model: str | None = None,

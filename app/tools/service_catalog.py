@@ -37,7 +37,11 @@ _MEM_FAMILIES = ("container_memory_working_set_bytes", "container_memory_usage_t
 
 
 def _client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(timeout=UPSTREAM_TIMEOUT, trust_env=False)
+    # trust_env=False:直连,防本机代理把 localhost 截胡
+    # 统一从 net 建客户端:诊断的服务发现要能被录制与回放
+    from app.diagnosis import net
+    return net.client(UPSTREAM_TIMEOUT)
+
 
 
 async def _enabled_targets() -> list:
