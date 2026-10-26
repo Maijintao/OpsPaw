@@ -57,3 +57,7 @@ app.include_router(extract_router)
 
 from app.api.targets import router as targets_router
 app.include_router(targets_router)
+
+
+from app.api.grafana import router as grafana_router
+app.include_router(grafana_router)
