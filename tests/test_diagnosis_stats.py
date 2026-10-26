@@ -135,6 +135,11 @@ def test_thresholds_are_derived_from_false_alarm_target():
     assert S.MIN_HISTORY_SAMPLES == math.ceil(1.0 / alpha)
 
 
+def test_trace_min_samples_derived_from_quantile():
+    """trace 样本下限由"慢"的定义分位反解:p95 之上平均至少要有 1 个观测。"""
+    import math
+    from app.diagnosis import deviation as D
+    assert D.TRACE_MIN_SAMPLES == math.ceil(1.0 / (1.0 - D.LATENCY_QUANTILE))
 
 
 def test_false_alarm_rate_follows_sample_size():
