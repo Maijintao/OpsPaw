@@ -225,6 +225,26 @@ class RepairAuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+
+class RepairRun(Base):
+    """修复 agent 任务存档:同 DiagnosisRun 范式——内存只做热缓存,终态落库,
+    修复卡片刷新/回放/跨天都能拿到完整回执。"""
+    __tablename__ = "repair_runs"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    conversation_id: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), nullable=True)
+    diagnosis_id: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    service: Mapped[str] = mapped_column(String(128))
+    platform: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(16))   # done / failed(进行中不落库)
+    verdict: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    action: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    events: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class DiagnosisRun(Base):
     """根因分析任务存档:诊断层 v0 的 run 只存内存,进程重启卡片就查无此单。
     落库后聊天卡片历史回放/刷新/跨天都能拿到完整结论;终态才写库(进行中的轮询走内存)。"""

@@ -24,6 +24,7 @@ async def lifespan(app: FastAPI):
     await repository.ensure_targets_table()
     await repository.ensure_diagnosis_table()
     await repository.ensure_repair_tables()
+    await repository.ensure_repair_runs_table()
     await runtime.init_graph()
     registry.scan_builtin()
     from app.api.targets import heal_loop

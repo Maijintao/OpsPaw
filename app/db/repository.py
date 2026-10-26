@@ -693,3 +693,56 @@ async def upsert_settings(items: dict[str, str]) -> None:
             else:
                 row.svalue = v
         await s.commit()
+
+
+async def ensure_repair_runs_table() -> None:
+    """repair_runs 启动自建(同 ensure_diagnosis_table 范式:checkfirst,只补建不迁移)。"""
+    async with db.engine.begin() as conn:
+        await conn.run_sync(
+            lambda sync_conn: RepairRun.__table__.create(sync_conn, checkfirst=True))
+
+
+async def save_repair_run(run: dict) -> None:
+    """修复终态落库(整单覆盖式 upsert)。失败不抛——存档是增强,不能弄死修复任务。"""
+    import logging
+    row = {
+        "id": run["id"], "conversation_id": run.get("conversation_id"),
+        "diagnosis_id": run.get("diagnosis_id"),
+        "service": run.get("service") or "", "platform": run.get("platform"),
+        "status": run.get("status") or "done",
+        "verdict": (run.get("result") or {}).get("verdict"),
+        "action": (run.get("result") or {}).get("action"),
+        "events": run.get("events") or [], "result": run.get("result"),
+    }
+    try:
+        async with db.async_session() as s:
+            await s.merge(RepairRun(**row))
+            await s.commit()
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger("app").warning("修复任务 %s 落库失败(%s),卡片仅本次进程内可见",
+                                         run.get("id"), type(e).__name__)
+
+
+async def get_repair_run(repair_id: str) -> dict | None:
+    """按 id 取存档,重建成 API 同形的 run 载荷(内存没有时兜底用)。"""
+    async with db.async_session() as s:
+        row = await s.get(RepairRun, repair_id)
+    if row is None:
+        return None
+    return {"id": row.id, "service": row.service, "platform": row.platform,
+            "diagnosis_id": row.diagnosis_id,
+            "status": row.status, "stage": "done" if row.status == "done" else "failed",
+            "events": row.events or [], "result": row.result or {},
+            "conversation_id": row.conversation_id,
+            "created_at": row.created_at.isoformat() if row.created_at else None}
+
+
+async def latest_repair_run_for_diagnosis(diag_id: str) -> dict | None:
+    """某诊断单最近一次修复任务(聊天卡片回放:刷新后修复卡靠它恢复)。"""
+    async with db.async_session() as s:
+        stmt = (select(RepairRun).where(RepairRun.diagnosis_id == diag_id)
+                .order_by(RepairRun.created_at.desc()).limit(1))
+        row = (await s.execute(stmt)).scalars().first()
+    if row is None:
+        return None
+    return {"id": row.id, "status": row.status}
