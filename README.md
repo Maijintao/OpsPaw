@@ -2,6 +2,26 @@
 
 面向运维值班的对话应用。当前 `mjt` 分支包含会话与工具、平台监控、诊断归因、修复连接器、告警巡检、事故中心、管理作业和可选成本观测。
 
+## 项目展示
+
+以下截图展示完整项目界面，RAG 功能正在整合中。
+
+### 值班对话与巡检
+
+![值班对话与巡检](docs/images/oncall-alert.png)
+
+### 运维知识问答
+
+![运维知识问答](docs/images/oncall-qa.png)
+
+### 服务监控
+
+![服务监控](docs/images/service-monitoring.png)
+
+### RAG 评估
+
+![RAG 评估](docs/images/rag-evaluation.png)
+
 ## 本地运行
 
 需要 Python 3.12 及以上和 uv。复制 `.env.example` 为 `.env`，填写模型及数据库连接；不要覆盖已有配置。
