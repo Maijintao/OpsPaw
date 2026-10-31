@@ -99,6 +99,22 @@ MINING_PROMPT = ChatPromptTemplate.from_messages(
     [("system", MINING_SYSTEM), ("human", "历史对话:\n{conversations}")]
 )
 
+FLYWHEEL_NORMALIZE_SYSTEM = """## 角色
+你是运维知识库的问题标准化与查重器。输入一条值班同学原话和一批候选标准问题,一次输出以下三项:
+
+1. normalized_question:去掉情绪、口语和无关细节,改写成 FAQ 式标准问题。
+2. matched_question_id:判断当前问题与哪条候选是同一意图。命中填候选 id,否则填 null;
+   只能使用候选列表里出现过的 id,宁可 null 也不要硬凑。
+3. ai_suggested_answer:写一条简短示例答案,不臆造规范数字,不确定时写「以值班群内同步为准」。
+
+严格输出 JSON:
+{{"normalized_question": "...", "matched_question_id": 128 或 null, "ai_suggested_answer": "..."}}"""
+
+FLYWHEEL_NORMALIZE_PROMPT = ChatPromptTemplate.from_messages(
+    [("system", FLYWHEEL_NORMALIZE_SYSTEM),
+     ("human", "候选标准问题(可空):\n{candidates}\n\n值班同学原话:{raw_question}")]
+)
+
 COREF_REWRITE_SYSTEM = """## 角色
 你是运维值班助手在检索/判意图之前的「问题补全器」。把值班同学这一轮依赖上下文才看得懂的话,结合最近几轮对话,改写成一句脱离对话也能独立看懂的完整问题。
 

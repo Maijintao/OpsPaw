@@ -24,6 +24,8 @@ JOBS = {
     "kb-mine": JobSpec("kb-mine", "从历史对话挖掘知识", (sys.executable, "scripts/mine_knowledge.py"), "需要 MySQL 和聊天上游"),
     "eval-rag": JobSpec("eval-rag", "四策略 RAG 离线评估", (sys.executable, "scripts/eval_ch04.py"), "需要知识库、Milvus 和模型上游"),
     "calibrate-confidence": JobSpec("calibrate-confidence", "置信度阈值校准", (sys.executable, "scripts/calibrate_confidence.py"), "需要知识库、Milvus 和重排上游"),
+    "flywheel": JobSpec("flywheel", "反馈问题标准化与归并", (sys.executable, "scripts/flywheel_pipeline.py"), "需要 MySQL 和聊天上游"),
+    "eval-flywheel": JobSpec("eval-flywheel", "评估流水线并记录趋势", (sys.executable, "scripts/eval_flywheel.py"), "需要 MySQL、知识库和模型上游"),
 }
 
 @dataclass
