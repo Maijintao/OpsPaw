@@ -27,6 +27,7 @@ from app.api.topics import router as topics_router
 from app.api.kb import router as kb_router
 from app.api.feedback import router as feedback_router
 from app.api.review import router as review_router
+from app.api.rageval import router as rageval_router
 
 
 @asynccontextmanager
@@ -73,6 +74,7 @@ app.include_router(topics_router)
 app.include_router(kb_router)
 app.include_router(feedback_router)
 app.include_router(review_router)
+app.include_router(rageval_router)
 
 _STATIC = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=_STATIC), name="static")
@@ -149,6 +151,11 @@ async def kb_page() -> FileResponse:
 @app.get("/review", include_in_schema=False)
 async def review_page() -> FileResponse:
     return FileResponse(_STATIC / "review.html")
+
+
+@app.get("/rag-eval", include_in_schema=False)
+async def rag_eval_page() -> FileResponse:
+    return FileResponse(_STATIC / "rageval.html")
 
 
 @app.get("/incidents", include_in_schema=False)
