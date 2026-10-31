@@ -4,6 +4,8 @@ import os
 os.environ.setdefault('CHAT_MODEL', 'test-model')
 os.environ.setdefault('CHAT_BASE_URL', 'https://example.invalid/v1')
 os.environ.setdefault('CHAT_API_KEY', 'test-key')
+os.environ.setdefault('EMBED_API_KEY', 'test-embed-key')
+os.environ.setdefault('RERANK_API_KEY', 'test-rerank-key')
 
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
