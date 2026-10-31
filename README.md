@@ -42,6 +42,28 @@ docker compose --env-file .env.deploy -f compose.deploy.yml down
 
 远端 API 需要网络连接和有效凭据。真实故障诊断需要另外接入 Prometheus、Jaeger 等观测服务；主题分类器需要单独准备模型文件。详细说明见 [DEPLOY.md](DEPLOY.md)。
 
+## 项目展示
+
+### 值班猫首页
+
+![值班猫首页](docs/images/chat-home.png)
+
+### 运维知识问答
+
+![运维知识问答](docs/images/knowledge-chat.png)
+
+### 故障诊断与修复
+
+![故障诊断与修复](docs/images/diagnosis-repair.png)
+
+### RAG 评估
+
+![RAG 评估](docs/images/rag-evaluation.png)
+
+### 观测与成本
+
+![观测与成本](docs/images/observability-cost.png)
+
 ## 开发运行
 
 需要 Python 3.12 及以上、uv、MySQL 和模型服务。知识检索需要 Milvus，BM25 和完整检索评估使用 Milvus Standalone。开发时连接已有基础服务，直接运行 Python 进程。
