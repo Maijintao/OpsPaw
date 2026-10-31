@@ -17,6 +17,11 @@ class JobSpec:
 JOBS = {
     "cost-report": JobSpec("cost-report", "生成意图 token 用量报告", (sys.executable, "scripts/cost_by_intent.py"), "需要配置 Langfuse"),
     "diagnosis-replay": JobSpec("diagnosis-replay", "离线回放诊断样例", (sys.executable, "scripts/eval_diagnosis.py", "run"), "需要已有离线样例"),
+    "kb-preview": JobSpec("kb-preview", "材料清单与切块预览", (sys.executable, "scripts/show_kb.py"), "无需额外服务"),
+    "kb-build": JobSpec("kb-build", "离线建库", (sys.executable, "scripts/build_kb.py"), "需要 MySQL"),
+    "kb-vectorize": JobSpec("kb-vectorize", "向量化待处理知识块", (sys.executable, "scripts/vectorize_kb.py"), "需要 MySQL、嵌入上游和 Milvus"),
+    "kb-repatch": JobSpec("kb-repatch", "补丁式重嵌知识块", (sys.executable, "scripts/kb_repatch.py"), "需要 MySQL 和嵌入上游"),
+    "kb-mine": JobSpec("kb-mine", "从历史对话挖掘知识", (sys.executable, "scripts/mine_knowledge.py"), "需要 MySQL 和聊天上游"),
 }
 
 @dataclass
