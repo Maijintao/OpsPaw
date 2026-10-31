@@ -50,6 +50,17 @@ async def query_catalog(
     return {"keyword": keyword, "matched": len(matched), "services": matched}
 
 
+# 超时按实测给,不吃内置工具那个 5 秒默认值:
+#   query_service 一次要打好几组 Prometheus 区间查询 + 一次 Jaeger 抽样,实测 6~7 秒
+#   (2026-10-27 靶机负载 ~5 时:cart 6.3s / product-catalog 7.4s / frontend 6.9s),
+#   默认 5 秒等于**每次必超时**——表现就是 agent 说"8 个服务全部返回超时",然后放弃查证。
+#   这不是故障导致的,是超时比工具本身还短。
+#   取值对齐观测类工具(它们也是 20s),并留出约 3 倍余量给靶机抖动。
+#   query_catalog 只做一次服务发现,实测 2.8s,但同样会随靶机负载翻倍,5 秒太紧。
+_TOOL_TIMEOUT_S = 20.0
+_CATALOG_TIMEOUT_S = 15.0
+
 registry.register(registry.spec_from_langchain_tool(
-    query_service, source="builtin", inject_user_id=True))
-registry.register(registry.spec_from_langchain_tool(query_catalog, source="builtin"))
+    query_service, source="builtin", inject_user_id=True, timeout=_TOOL_TIMEOUT_S))
+registry.register(registry.spec_from_langchain_tool(
+    query_catalog, source="builtin", timeout=_CATALOG_TIMEOUT_S))

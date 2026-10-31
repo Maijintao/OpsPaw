@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpsPaw · 登录</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'><rect x='2' y='2' width='4' height='4' fill='%232b2632'/><rect x='10' y='2' width='4' height='4' fill='%232b2632'/><rect x='2' y='4' width='12' height='9' fill='%232b2632'/><rect x='3' y='3' width='2' height='3' fill='%23ff9f57'/><rect x='11' y='3' width='2' height='3' fill='%23ff9f57'/><rect x='3' y='5' width='10' height='7' fill='%23ff9f57'/><rect x='5' y='7' width='1' height='2' fill='%232b2632'/><rect x='10' y='7' width='1' height='2' fill='%232b2632'/><rect x='7' y='9' width='2' height='1' fill='%23ff8095'/></svg>" />
+  <style>
+    :root {
+      --ink: #2b2632; --fur: #ff9f57; --coral: #ff7a59; --cream: #fff6e6;
+      --paper: #fffaf0; --muted: #9b8f86; --error: #d6455a;
+      --shadow: 4px 4px 0 var(--ink); --shadow-lg: 8px 8px 0 var(--ink);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, Menlo, monospace;
+      background: var(--cream);
+      background-image: radial-gradient(rgba(43,38,50,.07) 1.5px, transparent 1.5px);
+      background-size: 22px 22px;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px; color: var(--ink);
+    }
+    .card {
+      width: min(400px, 100%);
+      background: var(--paper); border: 4px solid var(--ink);
+      box-shadow: var(--shadow-lg); padding: 26px 26px 24px;
+    }
+    .mascot { display: flex; align-items: center; gap: 12px; }
+    .mascot svg { flex: none; }
+    .mascot h1 { font-size: 19px; margin: 0; letter-spacing: 1px; }
+    .mascot .sub { margin: 3px 0 0; font-size: 12px; color: var(--muted); line-height: 1.6; }
+    form { margin-top: 20px; display: grid; gap: 14px; }
+    label { display: grid; gap: 5px; font-size: 12px; font-weight: 700; letter-spacing: 1px; }
+    input {
+      font: inherit; font-size: 14px; color: var(--ink);
+      background: #fff; border: 3px solid var(--ink); padding: 9px 11px; outline: none;
+    }
+    input:focus { background: var(--cream); }
+    button {
+      font: inherit; font-size: 14px; font-weight: 700; letter-spacing: 2px;
+      color: var(--ink); background: var(--fur); border: 3px solid var(--ink);
+      box-shadow: var(--shadow); padding: 10px; cursor: pointer;
+    }
+    button:hover { background: var(--coral); }
+    button:active { transform: translate(3px, 3px); box-shadow: none; }
+    .err {
+      display: none; margin-top: 16px; font-size: 12px; line-height: 1.6;
+      background: var(--error); color: #fff; border: 3px solid var(--ink);
+      padding: 8px 11px;
+    }
+    .foot { margin-top: 18px; font-size: 11px; color: var(--muted); line-height: 1.7; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="mascot">
+      <svg width="52" height="52" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true">
+        <rect x="2" y="2" width="4" height="4" fill="#2b2632"/><rect x="10" y="2" width="4" height="4" fill="#2b2632"/>
+        <rect x="2" y="4" width="12" height="9" fill="#2b2632"/>
+        <rect x="3" y="3" width="2" height="3" fill="#ff9f57"/><rect x="11" y="3" width="2" height="3" fill="#ff9f57"/>
+        <rect x="3" y="5" width="10" height="7" fill="#ff9f57"/>
+        <rect x="5" y="7" width="1" height="2" fill="#2b2632"/><rect x="10" y="7" width="1" height="2" fill="#2b2632"/>
+        <rect x="7" y="9" width="2" height="1" fill="#ff8095"/>
+      </svg>
+      <div>
+        <h1>OpsPaw 值班猫</h1>
+        <p class="sub">先登录,再上岗。喵。</p>
+      </div>
+    </div>
+    <div class="err" id="err">账号或密码不对,再试一次。</div>
+    <form method="post" action="/login">
+      <label>账号<input name="username" autocomplete="username" autofocus required /></label>
+      <label>密码<input name="password" type="password" autocomplete="current-password" required /></label>
+      <button type="submit">登 录</button>
+    </form>
+    <p class="foot">凭据只在这台浏览器上记一次,换机器再输。</p>
+  </main>
+  <script>
+    if (new URLSearchParams(location.search).get("err") === "1") {
+      document.getElementById("err").style.display = "block";
+    }
+  </script>
+</body>
+</html>

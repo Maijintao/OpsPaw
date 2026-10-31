@@ -29,7 +29,7 @@ def execute(queries: list, case_number: int, orchestrator: CoreOrchestrator,
     time_window, task, number = Intent_Interpreter.interprete_query(queries)
     print(time_window, task, number)
     answer, thinkings = orchestrator.process_task(time_window, task, number, case_number, vdbs, baseline)
-
+    
     return answer, thinkings
 
 def exp_no_finetune():
@@ -38,9 +38,9 @@ def exp_no_finetune():
     ad_reflection_file = os.path.join(cfg.reflection_file_path, f"Anomaly Sentinel_reflect.csv")
     ft_reflection_file = os.path.join(cfg.reflection_file_path, f"Failure Diagnoser_reflect.csv")
     rcl_reflection_file = os.path.join(cfg.reflection_file_path, f"Root Detective_reflect.csv")
-    ad_vdb = ReflectionVector(ad_reflection_file)
-    ft_vdb = ReflectionVector(ft_reflection_file)
-    rcl_vdb = ReflectionVector(rcl_reflection_file)
+    ad_vdb = ReflectionVector(ad_reflection_file) 
+    ft_vdb = ReflectionVector(ft_reflection_file) 
+    rcl_vdb = ReflectionVector(rcl_reflection_file) 
 
     answers = []
     final_results = []
@@ -61,7 +61,7 @@ def exp_no_finetune():
             writer.writerow(["query_id", "final_thinking"])
 
     start_time = time.time()
-
+    
     for i in tqdm(range(len(queries)),desc="Processing queries: "):
         if i < 25:
             continue
@@ -73,7 +73,7 @@ def exp_no_finetune():
         with open("results/exp/PPO/60/Market/cloudbed-2/answers_cloudbed-2.csv", "a", newline='', encoding="utf-8") as f_ans:
             writer = csv.writer(f_ans)
             writer.writerow([i, answer])
-
+        
         with open("results/exp/PPO/60/Market/cloudbed-2/final_thinkings_cloudbed-2.csv", "a", newline='', encoding="utf-8") as f_res:
             writer = csv.writer(f_res)
             writer.writerow([i, thinking])
@@ -84,5 +84,7 @@ if __name__ == "__main__":
     model_path = cfg.llm_setting_agent.model_path
     dataset = cfg.dataset
     query_dataset = cfg.query_dataset
-
+    
     exp_no_finetune()
+
+   

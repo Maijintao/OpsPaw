@@ -22,7 +22,8 @@ class RCLAgent(BaseAgent):
         data_features: Optional[dict[str, str]] = None,
         message_pool: 'MessagePool' = None,
         review_pool: 'ReviewPool' = None,
-        vector_db: 'ReflectionVector' = None
+        vector_db: 'ReflectionVector' = None,
+        instances: list | None = None,
     ):
         dataset_to_path = {
             "Bank": "configs/Bank.yaml",
@@ -37,10 +38,15 @@ class RCLAgent(BaseAgent):
         with open(file_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}
 
-        instances = config.get("instances", [])
+        # 候选清单:调用方给了就用它,没给才回落到配置文件里的全平台列表。
+        # 全平台列表让模型有 16 个选项可以瞎挑(实测 cartFailure 答了 load-generator,
+        # 那是个压测器,连业务服务都不是);候选清单是排序后的,范围小、有证据背书。
+        instances = list(instances) if instances else config.get("instances", [])
+        # 渲染成列表行,别把 Python 的 ['a', 'b'] 直接塞进提示词
+        instances_text = "\n".join(f"- {x}" for x in instances)
 
-        think_system_prompt = THINK_SYSTEM_PROMPT.format(instances=instances)
-        refine_system_prompt = REFINE_SYSTEM_PROMPT.format(instances=instances)
+        think_system_prompt = THINK_SYSTEM_PROMPT.format(instances=instances_text)
+        refine_system_prompt = REFINE_SYSTEM_PROMPT.format(instances=instances_text)
         user_prompt = self._build_user_prompt(time_window, failure_count, data_features)
         agent_context = AgentContext(
             cfg.llm_setting_agent.model_path,
@@ -61,8 +67,8 @@ class RCLAgent(BaseAgent):
             vector_db=vector_db
         )
         self.agent_context.gen_symptom_system_prompt += """
-        ##Examples:
-        1.
+        ##Examples: 
+        1. 
         <symptoms>
         - At **18:30:00**, **Mysql02** showed significant spikes in **disk I/O** metrics, including **Disk Percent Busy** and **Disk Read/Write**. This indicates a potential **disk I/O bottleneck** that likely caused delays in database operations, affecting downstream services.
         - Around **18:38:00**, **Mysql02** exhibited high **memory utilization**, suggesting **memory pressure** in the MySQL instance, which likely impacted its ability to handle database queries efficiently.
@@ -71,7 +77,7 @@ class RCLAgent(BaseAgent):
         - **Redis02** also showed **memory pressure** around **19:00:00**, with spikes in **used memory** and **max memory**, suggesting potential **cache eviction** or memory exhaustion, possibly triggered by slow backend responses.
         - The pattern of **disk I/O saturation**, **memory exhaustion**, and **latency spikes** across **Mysql02**, **Tomcat02**, and **Redis02** suggests a cascading failure, where MySQL’s resource exhaustion led to delays in request processing across other services.
         </symptoms>
-        2.
+        2. 
         <symptoms>
         - At **23:31:00**, **Mysql01** showed a significant spike in **TCP-FIN-WAIT**, indicating a potential network connection issue or delayed connection termination, which could have impacted downstream services such as **MG01** and **MG02**.
         - **Mysql02** exhibited multiple spikes in **Handler Read** and **Sort Range** at **23:26:00**, signaling a potential **database query bottleneck** due to inefficient queries or resource contention, which likely slowed down data retrieval and affected system performance.
@@ -81,7 +87,7 @@ class RCLAgent(BaseAgent):
         - **Redis01** showed increased **disk write** activity at **23:55:00**, indicating potential **memory or I/O pressure**, which could have affected its ability to serve requests efficiently and contributed to the overall system slowdown.
         - Based on these metric and trace anomalies, the root cause appears to be a combination of **disk I/O issues in Mysql02** and **memory pressure in Tomcat02**, which propagated delays through the system, impacting ingress services and causing significant performance degradation across multiple layers.
         </symptoms>
-        3.
+        3. 
         <symptoms>
         - At **20:30:00**, **Mysql02** exhibited significant spikes in **disk read/write operations** and **memory usage**, indicating potential **disk I/O saturation** and **memory pressure** in the database, which likely caused delays in query processing.
         - **Tomcat03** and **Tomcat04** showed frequent **GC pauses** due to **allocation failures** at **20:20:58** and **20:25:23**, suggesting **memory exhaustion** in these Tomcat instances, which would have hindered their ability to serve requests efficiently.
@@ -91,8 +97,8 @@ class RCLAgent(BaseAgent):
         </symptoms>
         """
         self.agent_context.reflect_system_prompt += """
-        ##Examples:
-        1.
+        ##Examples: 
+        1. 
         <symptoms>
         - At **18:30:00**, **Mysql02** showed significant spikes in **disk I/O** metrics, including **Disk Percent Busy** and **Disk Read/Write**. This indicates a potential **disk I/O bottleneck** that likely caused delays in database operations, affecting downstream services.
         - Around **18:38:00**, **Mysql02** exhibited high **memory utilization**, suggesting **memory pressure** in the MySQL instance, which likely impacted its ability to handle database queries efficiently.
@@ -101,7 +107,7 @@ class RCLAgent(BaseAgent):
         - **Redis02** also showed **memory pressure** around **19:00:00**, with spikes in **used memory** and **max memory**, suggesting potential **cache eviction** or memory exhaustion, possibly triggered by slow backend responses.
         - The pattern of **disk I/O saturation**, **memory exhaustion**, and **latency spikes** across **Mysql02**, **Tomcat02**, and **Redis02** suggests a cascading failure, where MySQL’s resource exhaustion led to delays in request processing across other services.
         </symptoms>
-        2.
+        2. 
         <symptoms>
         - At **23:31:00**, **Mysql01** showed a significant spike in **TCP-FIN-WAIT**, indicating a potential network connection issue or delayed connection termination, which could have impacted downstream services such as **MG01** and **MG02**.
         - **Mysql02** exhibited multiple spikes in **Handler Read** and **Sort Range** at **23:26:00**, signaling a potential **database query bottleneck** due to inefficient queries or resource contention, which likely slowed down data retrieval and affected system performance.
@@ -111,7 +117,7 @@ class RCLAgent(BaseAgent):
         - **Redis01** showed increased **disk write** activity at **23:55:00**, indicating potential **memory or I/O pressure**, which could have affected its ability to serve requests efficiently and contributed to the overall system slowdown.
         - Based on these metric and trace anomalies, the root cause appears to be a combination of **disk I/O issues in Mysql02** and **memory pressure in Tomcat02**, which propagated delays through the system, impacting ingress services and causing significant performance degradation across multiple layers.
         </symptoms>
-        3.
+        3. 
         <symptoms>
         - At **20:30:00**, **Mysql02** exhibited significant spikes in **disk read/write operations** and **memory usage**, indicating potential **disk I/O saturation** and **memory pressure** in the database, which likely caused delays in query processing.
         - **Tomcat03** and **Tomcat04** showed frequent **GC pauses** due to **allocation failures** at **20:20:58** and **20:25:23**, suggesting **memory exhaustion** in these Tomcat instances, which would have hindered their ability to serve requests efficiently.

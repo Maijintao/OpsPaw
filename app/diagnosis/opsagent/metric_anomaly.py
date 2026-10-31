@@ -76,7 +76,7 @@ class DataSetCNN(Dataset):
             return torch.tensor(self.datas[i].reshape(-1, self.length), dtype=torch.float)
         else:
             return torch.tensor(self.datas[i].reshape(-1, self.length), dtype=torch.float), torch.tensor(self.label[i], dtype=torch.long)
-
+        
 class CNN(nn.Module):
     def __init__(self, classes=50):
         super(CNN, self).__init__()
@@ -272,7 +272,7 @@ def generate_metric_describe(clf,path,services):
                 i = [int(df.loc[0, 'timestamp']),int(df.loc[29, 'timestamp'])]
                 kpi = '_'.join(parts[:-1])
                 an='The '+kpi+' metric for the service '+name+' is abnormal,'
-
+                
                 tem = df['value'].tolist()
                 with warnings.catch_warnings(record=True) as w:
                   warnings.simplefilter("always")
@@ -288,30 +288,30 @@ def generate_metric_describe(clf,path,services):
                   if ystd==0:
                       ystd=0.000001
                   score = round(abs((value-ymean)/ystd)/2,2)
-
+    
                   if math.isnan(score):
                     continue
-
+    
                   if score<=1:
                     continue
-
-
+        
+        
                   if not w:
                     start_utc = datetime.fromtimestamp(int(i[0]/1000), tz=pytz.UTC)
                     start_local = start_utc.astimezone(pytz.timezone('Asia/Shanghai'))
                     start = start_local.strftime('%Y-%m-%d %H:%M:%S')
-
+        
                     end_utc = datetime.fromtimestamp(int(i[1]/1000), tz=pytz.UTC)
                     end_local = end_utc.astimezone(pytz.timezone('Asia/Shanghai'))
                     end = end_local.strftime('%Y-%m-%d %H:%M:%S')
-
+        
                     an+='with anomaly pattern of '+an_type[p[0]]+',started at '+start+',ended at '+end+',reach '+str(value)+\
                     ','+trend +' from the previous '+str(tem[0])+',anomaly score is '+str(score)+'.'
                     anomaly1.append(an)
             except Exception as e:
                 continue
-
-
+    
+                
     return anomaly1
 
 classifier = CNNClassifier()
@@ -319,7 +319,7 @@ classifier.load_model("patterncla.pt")
 
 data = pd.read_csv("pattern/10.csv").iloc[:,0].values
 
-plt.plot(data, marker='o')
+plt.plot(data, marker='o') 
 plt.title("1D ndarray 折线图")
 plt.xlabel("索引位置")
 plt.ylabel("数值")
@@ -327,3 +327,4 @@ plt.savefig("output_plot.png")
 
 answer = classifier.predict(data)
 print(answer)
+

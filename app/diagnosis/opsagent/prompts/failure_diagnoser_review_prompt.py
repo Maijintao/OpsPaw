@@ -5,7 +5,7 @@ REVIEW_SYSTEM_PROMPT="""
 2) If it's answer and thinking from the Root Detective agent, check the the root cause component.
 
 ## Instructions:
-1) Let's think step by step.
+1) Let's think step by step. 
 2) Output the comments in special tokens "<comment>" and "</comment>".
 3) Output if you think this answer is acceptable inside a special tokens <accept> and </accept>.
 

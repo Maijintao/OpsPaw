@@ -1,7 +1,25 @@
-"""把观测数据转换为 OpsAgent 特征，分别运行 AD、FT、RCL 三个角色。
+"""OpsAgent 适配层:OpsPaw 活数据 → OpsAgent 三 agent 协作 → 根因结论。
 
-每个角色只调用一次 think；模型访问通过项目统一端点，结果转换为 Attribution。
-本阶段不执行交叉评审或 refine，不加载本地大语言模型权重。
+OpsAgent(ASE Industry 2026,AIOpsLab 排行榜 78.75)的源码在 app/diagnosis/opsagent/
+原样保留,本适配层不修改其文件(唯一例外:utils/public_function.py 的 llm_invoke
+函数体从 transformers 本地推理改为项目统一的 OpenAI 兼容端点——权重不随仓库分发,
+这一处不换整条链跑不起来,签名与返回值保持不变)。
+
+适配职责:
+1. 活数据 → OpsAgent 期望的 DataFrame 形态:
+   - metrics: {服务: pivot_df(index=秒级时间戳, columns=指标名)}(调用量/错误率/
+     时延/CPU/内存五条,表达式与 detect.scan 同一套,口径不分叉);
+   - logs: 错误日志 DataFrame(timestamp, cmdb_id, log_name, value)(Loki 未接入
+     则空表,extract_log_features 自带"无日志特征"降级);
+   - traces: span 级 DataFrame(timestamp_ms, duration, type, span_id, parent_id,
+     cmdb_id)。
+2. 按 OpsAgent 自己的编排序列(process_task)驱动:AD/FT/RCL think → 两两
+   cross_review → refine → 汇总 final_answer。agents/prompts/utils 文件零改动。
+3. 绕开 process_data(它只认 OPENRCA 的 CSV 目录),data_features 由本层用
+   DataProcessor 的特征函数对活数据现算——这正是它"training-free 数据处理器"
+   的设计意图:换系统不换处理器。
+4. cwd 纪律:OpsAgent 各模块顶层用相对路径读 configs/config.yaml,运行期间
+   chdir 到 opsagent 目录,结束切回(跑批单线程顺序执行,进程级 chdir 可接受)。
 """
 import logging
 import os
@@ -258,9 +276,32 @@ def attr_from_answers(answer_text: str, answers: list[str],
     counts = {svc: count for svc, count in counts.items() if count}
     no_root = any(k in low for k in ("no root cause", "无法确定", "证据不足",
                                      "inconclusive", "cannot determine"))
-    if no_root:
+
+    # ===== 定案权归确定性层,三个 agent 不再改判(2026-10-30) =====
+    # 依据是一次回顾性消融,不用重跑:跑批记录里同时存着"确定性首选"(candidates[0])
+    # 和"最终结论"(root_cause_service),直接对比就是消融结果。
+    #   完整批次 67 题:只用确定性首选 30/67,多 agent 最终结论 29/67;
+    #     它一共改判 2 次,2 次全错——cartFailure 把本来答对的 cart 改成了"无根因",
+    #     productCatalogFailure 把 product-catalog 改成了集外的 load-generator。
+    #   全部历史 132 题:改判 3 次,3 次全错。
+    # 也就是说,让 LLM 推翻确定性层的排序是净负收益。所以这里只留它的"解释"价值:
+    # 推理链照旧返回,结论锁死在 cands[0];协商意见不一致时写进 confidence_note 并
+    # 提示人工复核,不静默吞掉。
+    # 安全前提:平台粗筛"未见异常"的题在 detect 就短路了(事件只有 2 条,24 秒),
+    # 根本走不到这里——所以锁死结论不会把无故障题变成误报。
+    if not cands or cands[0].get("service") is None:
         return Attribution(verdict="inconclusive", root_cause_service=None, chain=[],
-                           confidence_note="OpsAgent 未定位到根因服务")
+                           confidence_note="确定性层没有给出候选,不猜")
+
+    top = cands[0]["service"]
+    chain = [a for a in answers if a][:5]
+
+    if no_root:
+        return Attribution(verdict="root_cause", root_cause_service=top, chain=chain,
+                           confidence_note=f"三个 agent 协商后未定位到根因,"
+                                           f"按确定性层首选定案({top})",
+                           missing=["协商未给出根因,结论只依据确定性定位"])
+
     if counts:
         best = max(counts.values())
         winners = [svc for svc, count in counts.items() if count == best]
@@ -269,45 +310,17 @@ def attr_from_answers(answer_text: str, answers: list[str],
         root = winners[0] if len(winners) == 1 else None
     else:
         root = None
-    if root:
-        note = "OpsAgent 三角色独立分析结论(根因定位角色)"
-        cand_names = {c["service"] for c in cands}
-        if abnormal is not None and root not in abnormal and root not in cand_names:
-            # 候选集外 + 自身无异常信号 → 凭空指认,退回证据支撑的首选候选
-            fallback = cands[0]["service"] if cands else None
-            if fallback is None:
-                return Attribution(verdict="inconclusive", root_cause_service=None, chain=[],
-                                   confidence_note="OpsAgent 指向候选集外、自身无异常信号的"
-                                                   "服务,且没有证据支撑的候选,不猜",
-                                   missing=["结论与证据对不上,建议人工复核 OpsAgent 报告"])
-            note = (f"OpsAgent 原答 {root}(候选集外且自身无异常信号),"
-                    f"已退回证据支撑的首选候选 {fallback}")
-            root = fallback
-        elif cands and root in cand_names:
-            # 改判纪律:LLM 只能往**证据更强**的方向改判,不能同层横向换人、也不能降级。
-            # 层级是确定性层的核心判据(状态变化>指认>塌陷>报错>时延>资源>中继);同层的
-            # 先后由 rank_key 的时间先后/跳数/层内偏离定序,那是确定性层已经算过的账。
-            # 允许 LLM 同层换人 = 把确定性排序丢掉换成它的猜测——实测两次:
-            #   ① adHighCpu:锚点 ad 的 CPU 是自身历史 60 倍、候选第一也是 ad,LLM 答 checkout;
-            #   ② paymentFailure:候选第一 payment(被 checkout 的失败调用指认、层内偏离更大),
-            #      LLM 答了它的调用方 checkout——正好停在症状上,把因果方向搞反了。
-            # 所以只有"比首选更强"(tier 更小)才采纳;同层或更弱一律退回首选,并在
-            # confidence_note 里如实写明改判过。
-            top = cands[0]
-            pick = next((c for c in cands if c["service"] == root), None)
-            # 没有层级信息(旧调用方/测试桩)就不做这条判断——没有证据不能改判
-            _pt, _tt = (pick or {}).get("tier"), top.get("tier")
-            if (pick is not None and top["service"] != root
-                    and _pt is not None and _tt is not None and int(_pt) >= int(_tt)):
-                note = (f"OpsAgent 原答 {root}(因果层级 {pick.get('tier')},未强于首选 "
-                        f"{top['service']} 的 {top.get('tier')}),已退回证据支撑的首选候选")
-                root = top["service"]
-        return Attribution(verdict="root_cause", root_cause_service=root,
-                           chain=[a for a in answers if a][:5],
-                           confidence_note=note)
-    return Attribution(verdict="inconclusive", root_cause_service=None, chain=[],
-                       confidence_note="OpsAgent 结论中未识别出已知服务名,不猜",
-                       missing=["结论文本与候选服务名对不上,建议人工复核 OpsAgent 报告"])
+
+    if root == top:
+        return Attribution(verdict="root_cause", root_cause_service=top, chain=chain,
+                           confidence_note=f"三个 agent 协商结论与确定性首选一致({top})")
+    note = (f"三个 agent 原答 {root},与确定性首选 {top} 不符,按确定性层定案"
+            if root else
+            f"三个 agent 未给出唯一结论,按确定性层首选定案({top})")
+    return Attribution(verdict="root_cause", root_cause_service=top, chain=chain,
+                       confidence_note=note,
+                       missing=[f"协商结论({root or '未给出'})与确定性首选({top})不一致,"
+                                f"建议人工复核归因报告"])
 
 
 @contextmanager
@@ -392,14 +405,33 @@ async def run_opsagent(symptom: str, service: str, cands: list[dict],
                      data_features, msg_pool, review_pool, vdbs[0])
         ft = FTAgent("Failure Diagnoser", blackboard.time_window, 1,
                      data_features, msg_pool, review_pool, vdbs[1])
+        # 候选清单只给排序后的这些,不再把全平台服务表塞给模型
+        _cand_names = [c["service"] for c in cands] or None
         rcl = RCLAgent("Root Detective", blackboard.time_window, 1,
-                       data_features, msg_pool, review_pool, vdbs[2])
+                       data_features, msg_pool, review_pool, vdbs[2],
+                       instances=_cand_names)
 
         # 编排:只保留三 agent 各一次 think(3 次 LLM 调用)。上游的 cross_review/refine
         # 每例要 9-15 次调用,大 prompt + DeepSeek 长推理下单例 10 分钟+(实测),砍掉。
         # 三 agent 的独立结论由调用方合成,评分主体(RCL)不受影响。
         ad.think()
         ft.think()
+        # 把前两个角色的结论交给根因侦探。三个角色并行跑、互相看不见时,异常分布和
+        # 故障形态对最终判定没有任何影响,那两个角色等于白跑。
+        _ad_msg = ad.agent_context.last_message() or msg_pool.get_latest_by_role(ad.name)
+        _ft_msg = ft.agent_context.last_message() or msg_pool.get_latest_by_role(ft.name)
+        _peer_lines = []
+        if _ad_msg is not None and _ad_msg.answer:
+            _peer_lines.append("异常哨兵判定的异常服务:" +
+                               "、".join(str(a) for a in _ad_msg.answer))
+        if _ft_msg is not None and _ft_msg.answer:
+            _peer_lines.append("故障诊断判定的故障类型:" +
+                               "、".join(str(a) for a in _ft_msg.answer))
+        if _peer_lines:
+            rcl.agent_context.user_prompt = (
+                rcl.agent_context.user_prompt
+                + "\n\n另外两个角色独立给出的结论(供参考;你可以不同意,不同意要写明理由):\n"
+                + "\n".join(f"- {line}" for line in _peer_lines))
         rcl.think()
 
         # think() 只把消息推进 message_pool;**agent_context.memory 只有 refine() 才写**。
@@ -413,4 +445,25 @@ async def run_opsagent(symptom: str, service: str, cands: list[dict],
         last = rcl_msg or ft_msg
         answers = [str(a) for a in ((last.answer if last is not None else []) or [])]
         thinkings = [str(m.thinking) if m is not None else "" for m in (rcl_msg, ft_msg, ad_msg)]
+
+        # 故障识别校验:模型先分「源头/传导/无关」,再选根因。答案落在传导里就是自相矛盾
+        # ——它自己都说"这个异常是下游传上来的",却把它当根因。这种时候退回证据最强的候选。
+        # 只读模型自己写的分类行,不额外调模型,零成本。
+        if rcl_msg is not None and answers and cands:
+            import re as _re
+            _th = str(getattr(rcl_msg, "thinking", "") or "")
+            _m = _re.search(r"源头\s*[:：]\s*\[([^\]]*)\]", _th)
+            if _m:
+                _sources = {x.strip().strip('"').strip("'")
+                            for x in _m.group(1).split(",") if x.strip()}
+                if _sources and answers[0] not in _sources:
+                    _top = cands[0]["service"]
+                    if _top in _sources:
+                        # 模型自己把首选判成了源头,却答了别的 → 用首选
+                        answers = [_top] + [a for a in answers if a != _top]
+                    else:
+                        # 首选也不在源头里:不自作主张,保留模型答案,但记一笔
+                        thinkings.append(
+                            f"[校验]模型把根因 {answers[0]} 判在「传导/无关」里,"
+                            f"自述源头是 {sorted(_sources)}")
     return "\n".join(answers), answers, thinkings

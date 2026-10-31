@@ -56,6 +56,21 @@ RANGE_TIMEOUT = 150.0
 _RETRY_ERRORS = (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError,
                  httpx.RemoteProtocolError)
 SCAN_WINDOW_S = 300                 # 当前窗:近 5 分钟(同时是"紧邻前窗"的偏移量)
+
+# 判"调用量异常"时,除了长期基线,还要跟**最近这一小时的常态**比一次(见 _recent_dist)。
+#
+# 为什么必须加这一道(2026-10-27 实测,这是当时最大的单一失分原因):
+# 调用量是个"水位"量,它跟着压测配置、下单流程、发版一起变,而长期历史里同时装着
+# 变化前后的两种水位。实测:靶子上的下单链路 10-26 22:56 起才真正跑起来,payment
+# 从 0.004 次/秒变成 0.43 次/秒;长期历史的中位数还是旧水位 0.004,于是 payment 在
+# **每一道题**上都以"调用量暴涨 100 倍"成为头号锚点,11 道题里 9 道被它顶掉真凶。
+# 它早就涨完了,和本次故障无关——"水位变了"不等于"这次出事了"。
+#
+# 取 12 个窗(1 小时):诊断窗和 settle 各 5 分钟,单个窗的抖动压不住 12 个窗的典型水平,
+# 而 1 小时又短到能反映"今天这会儿平台是什么样"。这是同一套界限公式换个时间尺度看,
+# 不引入新的判据。
+RECENT_WINDOWS = 12
+
 # (2026-10-15 注:曾在此加"分钟级持续性确认"(近 3 格 60s 窗至少 2 格越线才判异常)
 # 压对照组的单窗噪声误报,离线回放实证净负收益后回退:GC 型间歇尖峰故障被误杀成
 # 零锚点,锚点命中 4/12→3/12。单窗噪声与真故障在"24h×5min"的统计深度上不可分,
@@ -210,6 +225,31 @@ def _excluded(ts: float, windows: list[tuple[float, float]]) -> bool:
     return any(ws - 60 <= ts <= we + 60 for ws, we in windows)
 
 
+_RETENTION_HOURS_CACHE: dict[str, float] = {}
+
+
+async def _retention_hours(prom: dict) -> float:
+    """Prometheus 实际保留多久,用来限制历史回看。
+
+    常量写 7 天、数据只留 48 小时时,超出的部分查不到也不报错,基线会悄悄变短。
+    2026-10-26 核对发现这个不一致:配置 HISTORY_HOURS=168,而 Prometheus 启动参数
+    是 --storage.tsdb.retention.time=48h,实际基线只有 24 到 48 小时。
+    """
+    url = prom.get("url") or ""
+    if url in _RETENTION_HOURS_CACHE:
+        return _RETENTION_HOURS_CACHE[url]
+    hours = float(HISTORY_HOURS)
+    body = await _get_json(f"{url}/api/v1/status/flags", headers=prom.get("headers"))
+    raw = str(((body or {}).get("data") or {}).get("storage.tsdb.retention.time") or "").strip()
+    if len(raw) > 1:
+        unit, num = raw[-1], raw[:-1]
+        scale = {"h": 1.0, "d": 24.0, "w": 168.0, "y": 8760.0}.get(unit)
+        if scale and num.replace(".", "", 1).isdigit():
+            hours = min(hours, float(num) * scale)
+    _RETENTION_HOURS_CACHE[url] = hours
+    return hours
+
+
 async def _history_dist(prom: dict, expr: str, now: float, label: str,
                         hours: int = HISTORY_HOURS,
                         exclude: list[tuple[float, float]] | None = None) -> dict:
@@ -220,6 +260,7 @@ async def _history_dist(prom: dict, expr: str, now: float, label: str,
     表达式必须 `sum by (label)` 聚合过,否则这里拿不到服务名。
     exclude:已确诊故障时段,这些时刻的样本不进分布(见 _incident_windows)。"""
     from app.diagnosis import stats
+    hours = min(float(hours), await _retention_hours(prom))
     rows = await _range(prom, expr, now - hours * 3600, now, HISTORY_STEP_S)
     acc: dict[str, list] = {}
     for s in rows:
@@ -228,6 +269,31 @@ async def _history_dist(prom: dict, expr: str, now: float, label: str,
             continue
         vals = [v for ts, v in (s.get("values") or [])
                 if not _excluded(float(ts), exclude or [])]
+        acc.setdefault(svc, []).extend(vals)
+    return {svc: stats.Distribution.build(vals) for svc, vals in acc.items()}
+
+
+async def _recent_dist(prom: dict, expr: str, now: float, label: str,
+                       windows: int = RECENT_WINDOWS) -> dict:
+    """最近 `windows` 个窗(不含当前窗)的自身分布——"这会儿平台的常态是什么样"。
+
+    跟 _history_dist 的区别只有时间尺度:那份回答"这个服务一直以来是什么样",
+    这份回答"这一小时是什么样"。水位型指标(调用量)必须用后者判:长期历史里装着
+    变化前后的两种水位,拿当前值跟它比,只会把"早就发生的水位变化"报成"这次出事"。
+
+    **当前窗必须排除**:排除得掉才有意义。留着它,一次真暴涨会把自己算进"常态",
+    上界被自己顶上去,判据当场失明。
+    """
+    from app.diagnosis import stats
+    start = now - (windows + 1) * HISTORY_STEP_S
+    rows = await _range(prom, expr, start, now, HISTORY_STEP_S)
+    acc: dict[str, list] = {}
+    for s in rows:
+        svc = (s.get("metric") or {}).get(label)
+        if not svc:
+            continue
+        vals = [float(v) for ts, v in (s.get("values") or [])
+                if v not in ("NaN", "+Inf", "-Inf") and float(ts) <= now - SCAN_WINDOW_S]
         acc.setdefault(svc, []).extend(vals)
     return {svc: stats.Distribution.build(vals) for svc, vals in acc.items()}
 
@@ -289,19 +355,36 @@ async def _error_refs(prom: dict, info: dict, known: set[str],
         return {}
     # 历史基线:同一个错误表达式在过去 HISTORY_HOURS 上的分布,按 (调用方, 操作名) 建。
     # 一条 range query 拿全平台,查询条数与操作数无关。
+    #
+    # 同时切出**最近一小时(不含当前窗)**那一份:慢性背景错误是"这一小时一直这么失败",
+    # 不是"过去七天里失败过"。拿七天历史当门槛,会把"历史上失败过、现在又失败"当成慢性
+    # 直接放过——实测 2026-10-27:payment 的 Charge 在旧水位下常年 100% 失败,水位提上来
+    # 之后才恢复正常;`paymentFailure` 再把它打到 100% 时,七天历史说"见过",指认当场被
+    # 过滤掉,整题只能靠下游症状顶,最后答成了 frontend。
     _hist: dict[tuple, object] = {}
+    _hist_recent: dict[tuple, object] = {}
     try:
         _now = time.time() if now is None else now
         rows = await _range(prom, err_expr, _now - HISTORY_HOURS * 3600, _now, HISTORY_STEP_S)
         _acc: dict[tuple, list] = {}
+        _acc_recent: dict[tuple, list] = {}
+        _recent_from = _now - RECENT_WINDOWS * HISTORY_STEP_S
+        _recent_to = _now - SCAN_WINDOW_S
         for s in rows:
             m = s["metric"]
-            _acc.setdefault((m.get(info["service_label"], "?"),
-                             m.get("span_name", "")), []).extend(
-                float(v) for _, v in (s.get("values") or []) if v not in ("NaN", "+Inf", "-Inf"))
+            key = (m.get(info["service_label"], "?"), m.get("span_name", ""))
+            for ts, v in (s.get("values") or []):
+                if v in ("NaN", "+Inf", "-Inf"):
+                    continue
+                f = float(v)
+                _acc.setdefault(key, []).append(f)
+                if _recent_from <= float(ts) <= _recent_to:
+                    _acc_recent.setdefault(key, []).append(f)
         _hist = {k: stats.Distribution.build(v) for k, v in _acc.items()}
+        _hist_recent = {k: stats.Distribution.build(v) for k, v in _acc_recent.items()}
     except Exception:  # noqa: BLE001  历史取不到 → 退回旧口径(宁可多报,不静默失明)
         _hist = {}
+        _hist_recent = {}
     op_total: dict[tuple, float] = {}
     for s in all_res:
         m = s["metric"]
@@ -314,9 +397,15 @@ async def _error_refs(prom: dict, info: dict, known: set[str],
         callee = next((k for k in sorted(known) if k != caller and _op_points_to(op, k)), None)
         if not callee:
             continue
-        _thr = stats.anomaly_threshold(_hist.get((caller, op)))
+        # 慢性背景错误的门槛优先取"最近一小时"那一份:慢性是"一直这样",不是"历史上这样过"。
+        # 最近一小时样本不够(新操作/刚上线)才退回七天历史——不静默失明。
+        _recent_dist = _hist_recent.get((caller, op))
+        if _recent_dist is not None and _recent_dist.n >= stats.min_samples_for_median():
+            _thr = stats.anomaly_threshold(_recent_dist)
+        else:
+            _thr = stats.anomaly_threshold(_hist.get((caller, op)))
         if _thr is not None and err_rate <= _thr:
-            continue      # 慢性背景错误:没超出它自己的历史水平,不是新故障
+            continue      # 慢性背景错误:最近这一小时一直这么失败,不是本次新故障
         total = op_total.get((caller, op), 0.0)
         ratio = (err_rate / total) if total > 0 else 0.0
         prev = out.get(callee)
@@ -438,12 +527,21 @@ async def _profile_all(prom: dict, info: dict, known: set[str] | None = None,
     calls_cur = await _cur_by_service(prom, calls_expr, label, now)
     calls_hist = await _history_dist(prom, calls_expr, now, label, hours=hours,
                                      exclude=incidents)
+    # 水位维还要一份"最近一小时"的分布:用来判这次的变化是不是**新发生的**(见 RECENT_WINDOWS)。
+    # 取不到就退回只用长期基线(宁可多报,不静默失明),但会记进 gaps。
+    try:
+        calls_recent = await _recent_dist(prom, calls_expr, now, label)
+    except Exception as exc:  # noqa: BLE001
+        hint = "(回放未录制该查询,属预期)" if _net.current_mode() == "replay" else ""
+        logger.warning("调用量近期基线查询失败%s:%s", hint, exc)
+        calls_recent = {}
     # CPU 族靠"标签值匹配服务名"聚合,需要已知服务名集合;不传就用调用量里出现的服务。
     if known is None:
         known = set(calls_cur) | set(calls_hist)
 
     err_cur: dict[str, float] = {}
     err_hist: dict = {}
+    err_recent: dict = {}
     gaps: list[str] = []
     # 单维失败不再拖垮整场粗筛(2026-10-18 实测:时延维那条 24h 直方图 range 在靶机忙时
     # 超时,异常一路冒到 scan_platforms,整组被判 no_data → 整单 inconclusive——
@@ -467,6 +565,14 @@ async def _profile_all(prom: dict, info: dict, known: set[str] | None = None,
             hint = "(回放未录制该查询,属预期)" if _net.current_mode() == "replay" else ""
             logger.warning("粗筛错误率维查询失败%s:%s", hint, exc)
             gaps.append(f"错误率维查询失败({type(exc).__name__}),该维度本轮不可见")
+        # 错误率同样要看最近一小时(水位变了,错误率的样子也跟着变,见 _confirm_recent)。
+        # 单独兜底:这条查不到只影响复核,不该把整个错误维拖成缺口。
+        try:
+            err_recent = await _recent_dist(prom, err_expr, now, label)
+        except Exception as exc:  # noqa: BLE001
+            hint = "(回放未录制该查询,属预期)" if _net.current_mode() == "replay" else ""
+            logger.warning("错误率近期基线查询失败%s:%s", hint, exc)
+            err_recent = {}
 
     lat_cur: dict[str, float] = {}
     lat_hist: dict = {}
@@ -525,6 +631,18 @@ async def _profile_all(prom: dict, info: dict, known: set[str] | None = None,
             "memory": stats.deviation(mem_cur.get(svc), dist["memory"], label="内存",
                                       window_s=SCAN_WINDOW_S, tests=n_tests),
         }
+        # 调用量是水位量:只有**这次新出现**的水位才算异常。长期基线和最近一小时都说
+        # 它偏了,才认;最近一小时本来就是这个样子,说明水位早就变了,和本次故障无关。
+        _recent = calls_recent.get(svc)
+        if _recent is not None and _recent.n >= stats.min_samples_for_median():
+            for _dim, _dir in (("calls", "low"), ("calls_up", "high")):
+                dev[_dim] = _veto_stale_level(dev[_dim], _recent, _dir)
+        # 错误率反过来看:长期历史说"正常"、最近一小时说"不正常" → 这次出的新错。
+        # (水位变了,错误率的样子也会跟着变;见 _confirm_recent)
+        _recent_err = err_recent.get(svc)
+        if _recent_err is not None and _recent_err.n >= stats.min_samples_for_median():
+            dev["error"] = _confirm_recent(dev["error"], err_cur.get(svc), _recent_err,
+                                           calls_cur.get(svc), n_tests)
         dims = sorted(name for name, d in dev.items() if d.abnormal)
         c_now = calls_cur.get(svc, 0.0)
         out[svc] = {
@@ -895,6 +1013,63 @@ TIER_LATENCY_RELAY = 7
 TIER_ANCHOR_MAX = TIER_RESOURCE
 
 
+def _veto_stale_level(d: "stats.Deviation", recent: "stats.Distribution",
+                      direction: str) -> "stats.Deviation":
+    """调用量判定复核:当前水位如果**最近一小时本来就是这样**,这次就不算异常。
+
+    判据跟长期基线完全同源——同一套"高分位 + 4×波动"的界限,只是样本换成最近这一小时。
+    两个尺度都越界才算"这次新出的水位";只有一个越界,说明变化早就发生过了。
+    复核不过时保留原数字(ratio/position 仍可用于层内排序),只是不再算异常,
+    理由写进 basis——值班员看到的是"为什么不算",不是一句"正常"。
+    """
+    from app.diagnosis import stats
+    if not d.abnormal:
+        return d
+    edge = recent.band(stats.BAND_SENSITIVITY, direction)
+    if edge is None or d.value is None:
+        return d
+    stale = d.value >= edge if direction == "low" else d.value <= edge
+    if not stale:
+        return d
+    why = (f"最近 {recent.n} 个窗(不含当前窗)里,这个水位已经是常态"
+           f"(同期界限 {edge:.4g})——水位早就变了,不是本次故障带来的")
+    return stats.Deviation(position=d.position, ratio=d.ratio,
+                           basis=f"{d.basis};{why}", min_position=d.min_position,
+                           value=d.value, band=d.value, direction=direction)
+
+
+def _confirm_recent(d: "stats.Deviation", cur: float | None,
+                    recent: "stats.Distribution",
+                    calls_rate: float | None, tests: int) -> "stats.Deviation":
+    """错误率复核:长期历史说"正常"、最近一小时说"不正常",那就是**这次新出的错**。
+
+    为什么需要(2026-10-27 实测):payment 的错误率在旧水位下长期是 100%(它每窗只收到
+    一两条调用,其中一条是常驻失败的 flagd 长连接),水位提上来之后才变成 0。于是它
+    历史的中位数是 1.0,`paymentFailure` 把它打到 100% 时,拿长期基线一比——"跟平时
+    一样",整题漏判。这跟调用量那边是同一个病(历史里装着两种水位),只是长在了错误率上。
+
+    只做**单向**补充(长期正常 + 近期异常 → 判异常),不拿它去否掉长期异常:错误率是
+    事件计数,有"本窗事件数不足就不判"的地板兜底,拿十几个窗的近期分布当准入是安全的;
+    反过来拿它否掉长期异常会削弱判据。调用量那边是水位量,只做抑制,不做补充。
+
+    cur 单独传:长期基线可能因为样本不足/事件数不足直接给了"不做判断"(value 为空),
+    而复核要用的恰恰是**当前值本身**——它跟基线可不可判无关。
+    """
+    from app.diagnosis import stats
+    if d.abnormal or cur is None:
+        return d
+    again = stats.deviation(cur, recent, label="错误率",
+                            window_s=SCAN_WINDOW_S, calls_rate=calls_rate,
+                            tests=tests,
+                            min_samples=stats.min_samples_for_median())
+    if not again.abnormal:
+        return d
+    return stats.Deviation(position=d.position, ratio=d.ratio,
+                           basis=f"{d.basis};但{again.basis}(最近一小时尺度,按本次新出的异常算)",
+                           min_position=d.min_position, value=cur,
+                           band=again.band, direction="high")
+
+
 def _load_explained(dev: dict) -> bool:
     """资源偏离是否被自身负载解释:吞吐在涨,且资源涨得**没比吞吐多**。
 
@@ -1132,6 +1307,39 @@ async def scan_one(prom: dict, *, platform: str, cluster: str = "",
     # "看到了异常但都在中继位置",而不是硬选一个受害者当根因。
     best = min(a["tier"] for a in raw)
     if best > TIER_ANCHOR_MAX:
+        # 全是中继时别急着放弃:顺藤摸瓜。
+        # 每个被剪掉的受害者都记着"被谁解释"(explained_by);如果它们**共同**指向同一个
+        # 下游,那这个下游就是源头——只是它自己的指标没越线(缓存坏、依赖变慢这类,
+        # 坏在它身上、响在调用方),所以没进异常名单。
+        # 2026-10-26 实测:cartFailure 与 recommendationCacheFailure 两题都是 30 秒直接
+        # 返回 victims_only,而数据里受害者全都指向同一个下游。
+        #
+        # 用"多数"而不是"全部":调用链上可能有旁支受害者指向别处;超过半数指向同一个,
+        # 就是共同源头。与 _corroborated 的"至少两个独立调用方"同一条口径。
+        from collections import Counter
+        _explainers = Counter(p["explained_by"] for p in pruned if p.get("explained_by"))
+        if _explainers:
+            _top, _n = _explainers.most_common(1)[0]
+            # 共享中间件不能这么推。flagd 这种被全平台每个服务都调用的组件(长连接
+            # EventStream),"受害者共同指向"必然指向它——它是所有人的下游,不是谁的源头。
+            # 2026-10-26 实测:按共同指向推出来是 flagd,而真因是 recommendation。
+            # 判据用入度:被超过半数服务调用 = 共享基础设施,不参与这条推断。
+            _callers_of_top = {a for (a, b) in edges if b == _top}
+            _total_svc = len({x for e in edges for x in (e[0], e[1])}) if edges else 0
+            _shared = bool(_total_svc and len(_callers_of_top) * 2 > _total_svc)
+            if _n * 2 > len(pruned) and not _shared:
+                # 层级用"被点名"(TIER_BLAMED):多个受害者共同指向它,就是被点名,
+                # 与"调用方失败指认下游"是同一类证据。用 TIER_ANCHOR_MAX(资源级)会被
+                # 定位层换算成"其他异常",排到受害者后面,等于白推。
+                return {"anchors": [{"service": _top, "tier": TIER_BLAMED,
+                                     "magnitude": 0.0, "direction": "inferred",
+                                     "inferred_from": [p["service"] for p in pruned
+                                                       if p.get("explained_by") == _top]}],
+                        "observed": True, "pruned": pruned,
+                        "digest": _digest(profiles),
+                        "note": (f"全平台只有中继级异常,但 {_n}/{len(pruned)} 个受害者"
+                                 f"共同指向 {_top}——按调用链推断它是源头"
+                                 f"(它自身指标未越线,属于'坏在它身上、响在调用方')")}
         return {"anchors": [], "observed": True, "pruned": pruned,
                 "digest": _digest(profiles),
                 "note": ("平台有异常,但最高只到「纯时延中继」层——异常都能被下游解释,"
@@ -1220,7 +1428,7 @@ def _prune_by_causality(raw: list[dict], edges: dict, callers: dict) -> tuple[li
     return kept, dropped
 
 
-async def scan_platforms(now: float | None = None, platform: str | None = None) -> dict:
+async def scan_platforms(now: float | None = None) -> dict:
     """扫所有启用平台。返回 {status, anchors, note}:
     - available:有可疑锚点;
     - clear:平台健康,各服务与自身历史分布比都在正常范围;
@@ -1235,7 +1443,7 @@ async def scan_platforms(now: float | None = None, platform: str | None = None) 
     except Exception as e:  # noqa: BLE001
         return {"status": "no_data", "anchors": [],
                 "note": f"接入平台注册表不可读:{type(e).__name__}"}
-    enabled = [r for r in rows if r.enabled and (not platform or r.name == platform)]
+    enabled = [r for r in rows if r.enabled]
     if not enabled:
         return {"status": "no_data", "anchors": [], "note": "没有启用的接入平台"}
     anchors: list[dict] = []

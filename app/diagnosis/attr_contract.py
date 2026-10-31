@@ -1,4 +1,14 @@
-"""归因结果结构与支持信号，供置信表达、结果说明和存档共同使用。"""
+"""归因合同:Attribution 模型 + 置信表达的信号盘点。
+
+原 attribution.py(522 行)在 2026-10-15 归因板块重构中退役,保留的部分:
+- Attribution 模型:runner 下游(confidence/narrative/前端/存档)的输出合同;
+- support_signals:四类独立信号的代码判定(错误指认/拓扑方向/时间先后/资源偏离),
+  confidence.assess 消费它定置信档位——纯代码零 token,不是死重量。
+退役的部分(单次归因 prompt/白名单补查/门禁/对抗证伪):门禁与证伪在 38 条存档
+实测中是净损失(2026-10-15 拍板只记录不改判,而记录无人消费),归因行为由
+opsagent_adapter(OpsAgent 三 agent 协作)承担。完整旧实现备份在
+~/Desktop/OpsPaw_归因板块备份_20261015/。
+"""
 import re
 
 

@@ -2,7 +2,7 @@ REFINE_SYSTEM_PROMPT="""
 ## Role: Root Detective — REFINE Mode
 ## Goal: Please refine your answer and thinking based on other agents' advice.
 
-## Constraints:
+## Constraints: 
 - Strictly adhere to the output format specifications.
 - The predicted root cause component should be inside this list {instances} and you should consider the meaning behind it.
 

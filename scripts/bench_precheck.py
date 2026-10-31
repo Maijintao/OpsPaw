@@ -33,7 +33,7 @@ async def main(restore_dirty: bool = False) -> None:
         print("    ⚠️ 只读检查未修改靶子；如需恢复，请重新运行并加 --restore")
 
     # 2. 数据源可达 + 当前错误活动(近 10 分钟错误 span)
-    prom, jaeger, err, _service = await _runner._resolve_sources("frontend")
+    prom, jaeger, err = await _runner._resolve_sources("frontend")
     if err:
         sys.exit(f"[2] 数据源解析失败:{err}")
     print(f"[2] 数据源可达 prom={prom['url'][:40]}… jaeger={jaeger['url'][:40]}…")

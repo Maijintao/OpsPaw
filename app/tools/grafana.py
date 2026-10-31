@@ -24,9 +24,9 @@ from app.db import repository
 logger = logging.getLogger("app")
 
 # Grafana 端点:默认指向靶机上那套(生产部署应通过环境变量注入)
-GRAFANA_URL = os.environ.get("OPSPAW_GRAFANA_URL", "").rstrip("/")
+GRAFANA_URL = os.environ.get("OPSPAW_GRAFANA_URL", "http://42.193.188.243:3001").rstrip("/")
 GRAFANA_USER = os.environ.get("OPSPAW_GRAFANA_USER", "admin")
-GRAFANA_PASS = os.environ.get("OPSPAW_GRAFANA_PASS", "")
+GRAFANA_PASS = os.environ.get("OPSPAW_GRAFANA_PASS", "opspaw123")
 
 _TIMEOUT = 15.0
 
@@ -49,9 +49,7 @@ def _cache_set(key: str, val) -> None:
 
 
 async def _api(method: str, path: str, json_body: dict | None = None) -> dict:
-    if not GRAFANA_URL:
-        raise ValueError("请先配置 OPSPAW_GRAFANA_URL")
-    async with httpx.AsyncClient(timeout=_TIMEOUT, trust_env=False) as c:
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
         r = await c.request(method, f"{GRAFANA_URL}{path}", json=json_body,
                             auth=(GRAFANA_USER, GRAFANA_PASS))
         r.raise_for_status()

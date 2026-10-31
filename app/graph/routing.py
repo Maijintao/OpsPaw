@@ -8,6 +8,8 @@ INTENT_TO_ROUTE: dict[str, str] = {
     "投诉": "escalate",
     "闲聊": "fallback_script",
     "其他": "fallback_script",
+    # 自我介绍:代码级短路判出来的,固定文案报能力清单(见 intent.is_self_intro)
+    "自我介绍": "fallback_script",
     "运维知识": "knowledge",
     "变更申请": "change_flow",
     "故障处理": "service_ops",

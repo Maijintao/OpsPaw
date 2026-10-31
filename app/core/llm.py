@@ -68,7 +68,6 @@ def _net_async_client():
     return net.client(timeout=120.0)
 
 
-
 def get_chat_model(streaming: bool = False, model: str | None = None,
                    temperature: float | None = None) -> ChatOpenAI:
     """直连聊天上游,说 OpenAI 协议。

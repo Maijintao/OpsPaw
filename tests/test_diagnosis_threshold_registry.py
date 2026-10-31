@@ -39,7 +39,7 @@ def _numeric_constants(path: Path) -> list[str]:
 
     必须覆盖函数体:detect.scan_one 曾把 REF_STRONG_RATIO 写死在函数内部,只扫模块级
     的话它整条漏过去——那正是这个闸要拦的东西(2026-10-16 补)。"""
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+    tree = ast.parse(path.read_text())
     out: list[str] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Assign) or not _is_numeric_value(node.value):

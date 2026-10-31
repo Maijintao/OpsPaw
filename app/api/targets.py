@@ -273,7 +273,7 @@ def _fp_match(recorded: list[str], fresh: list[str]) -> bool:
     """指纹匹配:相等,或任一方向为子集且交集非空。子集语义是特性不是漏洞:
     新 ⊆ 记录 = 刚重建、collector 数据还没收齐;记录 ⊆ 新 = 业务扩容。"""
     if not recorded:
-        return False  # 没有原始身份记录时，交给人工确认。
+        return True   # 从没采到过出生指纹:②的唯一应答者闸已兜底,退化为信任
     if not fresh:
         return False  # 候选采不到指纹:不认,等数据收齐的下轮再说
     rs, fs = set(recorded), set(fresh)
@@ -302,7 +302,10 @@ async def _docker_ports(host: str, stype: str) -> set[int]:
     按容器内约定端口或容器名含类型关键字匹配宿主端口。
     docker host 取环境变量 OPSPAW_DOCKER_HOST(如 tcp://1.2.3.4:2375),缺省猜 host:2375;
     2375 没开是常态(不安全默认),静默返回空集退到候选端口表。"""
-    base = os.getenv("OPSPAW_DOCKER_HOST", "")
+    if host in ("localhost", "127.0.0.1") or ":" in host:
+        base = os.getenv("OPSPAW_DOCKER_HOST", "")
+    else:
+        base = os.getenv("OPSPAW_DOCKER_HOST") or f"tcp://{host}:2375"
     if not base or base.startswith("unix://"):
         return set()
     try:
@@ -500,17 +503,29 @@ def _dump(row, health: list[dict], repair: dict | None = None) -> dict:
 
 
 async def _dump_all(fresh: bool = False) -> list[dict]:
+    from app.repair import gateway
+
     rows = await repository.list_targets()
     if fresh:
         _PROBE_CACHE.clear()
+    # 探活并发跑:多个平台时不再一个等一个(缓存命中时这里几乎不耗时)
     healths = await asyncio.gather(*[_health_of(r) for r in rows]) if rows else []
-    return [_dump(row, health) for row, health in zip(rows, healths)]
+    out = []
+    for row, health in zip(rows, healths):
+        conns = [c for c in await repository.list_repair_connectors(row.id)
+                 if c.status != "revoked"]
+        repair = {"total": len(conns),
+                  "online": sum(1 for c in conns if gateway.is_online(c.id)),
+                  "names": [c.name for c in conns][:5]}
+        out.append(_dump(row, health, repair))
+    return out
 
 
 @router.get("")
 async def list_targets(fresh: bool = False) -> dict:
     """fresh=1 强制重新探活(后台「刷新」按钮用);默认吃十几秒内的缓存,点了就出。"""
     return {"targets": await _dump_all(fresh)}
+
 
 @router.post("")
 async def create_target(body: TargetIn) -> dict:
@@ -520,6 +535,7 @@ async def create_target(body: TargetIn) -> dict:
     health = await probe_target(row)
     _PROBE_CACHE[row.id] = (time.time(), health)   # 刚探过,顺手热上缓存
     return _dump(row, health)
+
 
 @router.put("/{target_id}")
 async def update_target(target_id: int, body: TargetIn) -> dict:
@@ -533,9 +549,14 @@ async def update_target(target_id: int, body: TargetIn) -> dict:
     _PROBE_CACHE[row.id] = (time.time(), health)
     return _dump(row, health)
 
+
 @router.delete("/{target_id}")
 async def delete_target(target_id: int) -> dict:
+    from app.repair import gateway
+    for conn in await repository.list_repair_connectors(target_id):
+        gateway.unregister(conn.id)
+    await repository.delete_repair_connectors_of_target(target_id)
     if not await repository.delete_target(target_id):
-        raise HTTPException(404, "平台不存在")
+        raise HTTPException(404, "靶子不存在")
     _forget_health(target_id)
     return {"ok": True, "deleted_at": time.strftime("%Y-%m-%d %H:%M:%S")}

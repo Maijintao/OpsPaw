@@ -101,6 +101,22 @@ BAND_SENSITIVITY = 4.0
 # 而故障窗通常比中位数高几个数量级(15 秒 vs 3 毫秒),6 倍足够把它们挡在外面。
 ROBUST_MAD_K = 6.0
 
+# 清洗的**总量上限**:最多只允许把历史里最极端的这一小撮当故障期剔掉。
+#
+# 为什么必须有上限(2026-10-27 实测,这条是当时误报的主因):
+# 清洗掉的比例一旦变大,剩下的样本就不再是"这个指标的正常样子"了——边界取的是
+# **残样**的分位,而残样只占原始样本的一部分,于是"正常上界"实际卡在原始历史的
+# 低得多的分位上,每次扫描都有远超 α 的窗被判异常。实测:ad 的 p95 正常在
+# 1.9~5.3ms 之间晃(p99 3.9ms),MAD 只有 0.02ms(它九成窗被直方图桶量化成同一个值),
+# 6×MAD 的界限把上界压到 2.14ms——于是 3.07ms、2.48ms 这种日常抖动每一轮都成锚点,
+# 一天 20 轮里能误报十几轮。
+#
+# 取 1% 与单次判定的误报预算同源(同一个 α,不是新拍的数):我们只承认"历史里最极端的
+# 1% 可能是故障期",超出这个量的偏离属于这个指标本来的样子,不是故障留下的痕迹。
+# 代价说清楚:历史里混进超过 1% 的故障窗时,清洗救不回来——那种情况要靠
+# known_incidents 把故障窗登记进来(那是声明,不是猜)。
+CONTAMINATION_MAX = FALSE_ALARM_PER_TEST
+
 
 def false_alarm_rate(n: int) -> float:
     """给定历史样本量,单次"超出自身历史经验范围"判定的误报概率。
@@ -230,6 +246,10 @@ class Distribution:
         - 连续量(时延这类):MAD=0 往往是**多峰**而不是"恒定"(15ms 为主、偶尔
           224ms、极少数 4.6s,是真实的服务画像),剔掉就等于把它的正常波动删了
           → 退回原样本,不做清洗。
+
+        剔多少也有上限(见 CONTAMINATION_MAX):界限能圈出来的离群点超过上限时,
+        只丢最靠外的那些,剩下的放回样本。否则"正常上界"会跟着残样的分位一起塌到
+        原始历史的低分位上,把日常抖动报成故障。
         """
         if not self.values:
             return []
@@ -242,7 +262,17 @@ class Distribution:
                 return [v for v in self.values if v == med]
             return list(self.values)
         lo, hi = med - ROBUST_MAD_K * mad, med + ROBUST_MAD_K * mad
-        return [v for v in self.values if lo <= v <= hi]
+        outside = [i for i, v in enumerate(self.values) if not lo <= v <= hi]
+        if sparse:
+            # 稀疏计数比率(错误率)不受上限约束:它的"正常"就是中位数本身,
+            # 不等于中位数的窗口是可疑事件而不是这个指标的日常样子(见上)。
+            return [v for i, v in enumerate(self.values) if i not in set(outside)]
+        allowed = int(len(self.values) * CONTAMINATION_MAX)
+        if len(outside) > allowed:
+            outside.sort(key=lambda i: -abs(self.values[i] - med))
+            outside = outside[:allowed]
+        drop = set(outside)
+        return [v for i, v in enumerate(self.values) if i not in drop]
 
     def robust_stats(self, sparse: bool = False
                      ) -> tuple[float | None, float | None, float | None, int]:
@@ -288,7 +318,20 @@ class Distribution:
         if not self.values:
             return None
         p99, p01, iqr, _ = self.robust_stats(sparse)
-        spread = (iqr or 0.0) * sensitivity
+        # IQR 退化(=0)时不能直接用,否则边界退化成"等于历史最大值"。
+        # 为什么:IQR 是四分位距,要求"过半窗口有差异"才有值。可有些指标常年被量化在
+        # 同一档上——2026-10-30 对照题(没注入任何故障)误报就是这么来的:quote 的 p95
+        # 时延 540 个窗口里过半完全等于 1.9ms,于是 Q1=Q3=1.9、IQR=0、边界=1.949,
+        # 而当前值 1.951 只高出 0.002 毫秒就被判成"网络时延"。
+        # 改法:退化时拿"中位数到高分位(或低分位)的距离"当波动尺度——这也是从数据
+        # 本身取的,不是拍一个百分比。错误率这类基线恒 0 的指标 p99-p50 仍是 0,
+        # 行为完全不变("历史上从没出现过"依然算异常)。
+        scale = iqr or 0.0
+        if scale <= 0:
+            med = self.p50 or 0.0
+            scale = max(0.0, (med - (p01 or 0.0)) if direction == "low"
+                        else ((p99 or 0.0) - med))
+        spread = scale * sensitivity
         if direction == "low":
             return max(0.0, (p01 or 0.0) - spread)
         return (p99 or 0.0) + spread
@@ -366,7 +409,8 @@ def deviation(cur: float | None, dist: Distribution, *,
               label: str = "值", direction: str = "high",
               window_s: float | None = None, tests: int = 1,
               calls_rate: float | None = None,
-              sensitivity: float = BAND_SENSITIVITY) -> Deviation:
+              sensitivity: float = BAND_SENSITIVITY,
+              min_samples: int = MIN_HISTORY_SAMPLES) -> Deviation:
     """算当前值相对自身历史分布的偏离。样本不足或无数据一律返回"不异常"且 basis
     说明原因——**不许拿"没有数据"当"正常",也不许拿它当"异常"**,如实陈述。
 
@@ -377,6 +421,10 @@ def deviation(cur: float | None, dist: Distribution, *,
     量纲是错的);给了调用速率才算得对。事件数不足 ZERO_BASELINE_EVENTS 就不判——
     "1 个请求失败 = 50% 错误率"这种样本撑不起结论(Dynatrace 的低流量保护同理)。
     tests:同时判了多少次。仅用于分位门槛的回退路径(见 position_min),band 生效时不用。
+    min_samples:样本量下限。缺省是 MIN_HISTORY_SAMPLES(长历史基线的口径);拿**最近
+    一小段**的分布当基线时(见 detect 的近期复核)要放宽——那段本来就只有十几个窗,
+    用长历史的门槛会直接判"样本不足",复核永远不生效。这里放宽的只是"能不能判",
+    判据本身(边界公式、事件数地板)完全不变。
 
     判"异常"用 band(高分位 + n×IQR),不用"分位位置":
     位置问的是"这个值在历史里排第几",一旦历史里混进过一次同类故障,位置就永远上不去;
@@ -384,15 +432,15 @@ def deviation(cur: float | None, dist: Distribution, *,
     (2026-10-22 实测:位置判据下 ad 3.8% 判正常、frontend-web 0.18% 判异常——既漏又误。)"""
     if cur is None or not math.isfinite(cur):
         return Deviation(None, None, f"{label}当前窗无数据,不做判断", direction=direction)
-    if not dist.enough:
+    if dist.n < max(int(min_samples), 1):
         return Deviation(None, None,
-                         f"{label}历史样本不足({dist.n}<{MIN_HISTORY_SAMPLES}),不做判断",
+                         f"{label}历史样本不足({dist.n}<{min_samples}),不做判断",
                          direction=direction)
-    pos = dist.position(cur, direction=direction)
+    # 分位位置只在样本够解分位时才有意义(见 MIN_HISTORY_SAMPLES);没有它不影响边界判定,
+    # 边界是"高分位 + n×波动",十几个窗也估得出来。
+    pos = dist.position(cur, direction=direction) if dist.enough else None
     med = dist.p50
     ratio = round(cur / med, 3) if med else None
-    if pos is None:
-        return Deviation(None, ratio, f"{label}历史样本不足,不做判断", direction=direction)
 
     pmin = position_min(tests)
     # 错误率是"稀疏计数比率":正常值常年是 0,不等于 0 的窗口多半就是故障窗,
@@ -441,7 +489,8 @@ def deviation(cur: float | None, dist: Distribution, *,
                          value=cur, band=edge, direction=direction)
 
     if edge is not None and cur > edge:
-        hard = " 且高于历史最大值" if pos >= POSITION_BEYOND_MAX else ""
+        hard = (" 且高于历史最大值"
+                if pos is not None and pos >= POSITION_BEYOND_MAX else "")
         basis = (f"{label}当前值 {cur:.4g} 超出自身正常上界 {edge:.4g}"
                  f"(p99 {p99r:.4g} + {sensitivity:.0f}×波动 {spread:.4g};{base}){hard}")
     else:

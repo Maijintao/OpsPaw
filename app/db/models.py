@@ -5,6 +5,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
+
 class Conversation(Base):
     __tablename__ = "conversations"
 
@@ -96,6 +97,7 @@ class QaExtractionStaging(Base):
     question: Mapped[str] = mapped_column(Text)
     answer: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(
+        # kept 是「去重保留、等人审」,不是「已入库」;入库只走 /api/kb/staging/approve
         Enum("extracted", "kept", "discarded", "approved", "rejected"),
         server_default="extracted",
     )
@@ -124,28 +126,27 @@ class LowConfidenceQuestion(Base):
     __tablename__ = "low_confidence_questions"
 
     id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True)
-    conversation_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("conversations.id"), nullable=True)
+    conversation_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("conversations.id"), nullable=True)
     raw_question: Mapped[str] = mapped_column(Text)
-    source: Mapped[str] = mapped_column(
-        Enum("retrieval_low_conf", "self_check", "user_feedback"))
+    source: Mapped[str] = mapped_column(Enum("retrieval_low_conf", "self_check", "user_feedback"))
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    retrieved_chunks: Mapped[list | None] = mapped_column(
-        JSON(none_as_null=True), nullable=True)
+    # ch09 落池时召回快照。none_as_null=True:Python None 存 SQL NULL 而非 JSON null
+    # (默认 False 会把 None 写成 JSON 'null',IS NOT NULL 判真、语义全乱,实测踩坑)
+    retrieved_chunks: Mapped[list | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     matched_review_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("review_queue.id"), nullable=True)
+        BigInteger, ForeignKey("review_queue.id"), nullable=True)               # ch09 查重归并落点
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class ReviewQueue(Base):
+    """ch09 飞轮待审队列:一行 = 一个去重后的知识缺口;查重命中累加 occurrence_count 不新建行。"""
     __tablename__ = "review_queue"
 
     id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True)
     normalized_question: Mapped[str] = mapped_column(String(512))
     ai_suggested_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     occurrence_count: Mapped[int] = mapped_column(Integer, server_default="1")
-    review_status: Mapped[str] = mapped_column(
-        Enum("待审", "通过", "驳回"), server_default="待审")
+    review_status: Mapped[str] = mapped_column(Enum("待审", "通过", "驳回"), server_default="待审")
     approved_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -154,25 +155,31 @@ class ReviewQueue(Base):
 
 
 class EvalRun(Base):
+    """ch09 自动化评估流水线:一行 = 一轮评估;metrics JSON 收各指标,按时间连成趋势。"""
     __tablename__ = "eval_runs"
 
     id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True)
-    triggered_by: Mapped[str] = mapped_column(
-        Enum("定时", "手动"), server_default="定时")
+    triggered_by: Mapped[str] = mapped_column(Enum("定时", "手动"), server_default="定时")
     dataset_size: Mapped[int] = mapped_column(Integer)
     metrics: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class FaithCase(Base):
+    """ch04 编造个案台账:一题一行,跨轮累计。
+
+    报告每跑一次就被覆盖,个案和它的处置状态得有地方长期待着。同一题再次被判编造只更新
+    这一行(seen_count+1);已解决的题重新被判出来会退回「未解决」——那是复发。
+    citations 是这一轮喂给模型的 Top-K 证据全集(答案里的角标 [n] 即其序号),追溯时要能
+    看到当时喂了什么、以及答案实际只引用了其中哪几条。
+    """
     __tablename__ = "faith_cases"
 
     id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True)
     eval_id: Mapped[str] = mapped_column(String(16), unique=True)
     bucket: Mapped[str] = mapped_column(String(24))
     query: Mapped[str] = mapped_column(String(512))
-    strategy: Mapped[str] = mapped_column(
-        String(24), server_default="hybrid_rerank")
+    strategy: Mapped[str] = mapped_column(String(24), server_default="hybrid_rerank")
     answer: Mapped[str] = mapped_column(Text)
     reason: Mapped[str] = mapped_column(Text)
     citations: Mapped[list | None] = mapped_column(JSON, nullable=True)
@@ -209,15 +216,30 @@ class Target(Base):
 
 
 class TopicClassification(Base):
+    """ch10 主题分类结果:旁路批量归类,一行 = 一条问题的一次归类;labels 存命中类目名数组。"""
     __tablename__ = "topic_classifications"
 
     id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True)
     question_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("low_confidence_questions.id"))
     labels: Mapped[list] = mapped_column(JSON)
-    classified_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now())
+    classified_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+
+class AppSetting(Base):
+    """后台「API 设置」:运行时可改的上游配置覆盖项(key-value),优先级高于 .env。
+
+    只存与 .env 不同的覆盖值,程序自改 .env 是反模式(容器只读/git 脏),DB 才是运行时
+    配置的正解。embed_fingerprint 单独一条:记录「Milvus 里的向量是哪个嵌入配置产出的」
+    (base_url+model)——换嵌入模型向量空间不通用、不能互转,指纹变了必须 drop 集合
+    全量重嵌;api_key 不进指纹(key 只影响连通性,不影响向量空间)。"""
+    __tablename__ = "app_settings"
+
+    skey: Mapped[str] = mapped_column(String(64), primary_key=True)
+    svalue: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
 
 
 class RepairEnrollmentToken(Base):
@@ -235,7 +257,6 @@ class RepairEnrollmentToken(Base):
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
 
 
 class RepairConnector(Base):
@@ -256,24 +277,6 @@ class RepairConnector(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
-
-
-class AppSetting(Base):
-    """后台「API 设置」:运行时可改的上游配置覆盖项(key-value),优先级高于 .env。
-
-    只存与 .env 不同的覆盖值,程序自改 .env 是反模式(容器只读/git 脏),DB 才是运行时
-    配置的正解。embed_fingerprint 单独一条:记录「Milvus 里的向量是哪个嵌入配置产出的」
-    (base_url+model)——换嵌入模型向量空间不通用、不能互转,指纹变了必须 drop 集合
-    全量重嵌;api_key 不进指纹(key 只影响连通性,不影响向量空间)。"""
-    __tablename__ = "app_settings"
-
-    skey: Mapped[str] = mapped_column(String(64), primary_key=True)
-    svalue: Mapped[str] = mapped_column(Text)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
-
 
 
 class RepairPlan(Base):
@@ -301,7 +304,6 @@ class RepairPlan(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime)
 
 
-
 class RepairApproval(Base):
     """审批:绑定计划 hash、审批人、有效期。计划内容一变 hash 就变,旧审批自动失效。"""
     __tablename__ = "repair_approvals"
@@ -313,7 +315,6 @@ class RepairApproval(Base):
     approved_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     status: Mapped[str] = mapped_column(String(16), default="active")  # active/used/rejected
-
 
 
 class RepairExecution(Base):
@@ -331,7 +332,6 @@ class RepairExecution(Base):
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     verification: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
-
 
 
 class RepairAuditLog(Base):
@@ -352,6 +352,28 @@ class RepairAuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class DiagnosisRun(Base):
+    """根因分析任务存档:诊断层 v0 的 run 只存内存,进程重启卡片就查无此单。
+    落库后聊天卡片历史回放/刷新/跨天都能拿到完整结论;终态才写库(进行中的轮询走内存)。"""
+    __tablename__ = "diagnosis_runs"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    conversation_id: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), nullable=True)
+    service: Mapped[str] = mapped_column(String(128))
+    symptom: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    platform: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(16))   # done / failed(queued/running 不落库)
+    verdict: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    root_cause_service: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # 用户对根因的确认:诊断结论在确认前只是系统分析,不能拿它启动修复
+    confirmation: Mapped[str] = mapped_column(String(16), server_default="pending")
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    confirmed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    events: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
 
 class RepairRun(Base):
     """修复 agent 任务存档:同 DiagnosisRun 范式——内存只做热缓存,终态落库,
@@ -370,7 +392,6 @@ class RepairRun(Base):
     events: Mapped[list | None] = mapped_column(JSON, nullable=True)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
 
 
 class Sentinel(Base):
@@ -413,7 +434,6 @@ class Sentinel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-
 class IntakeEvent(Base):
     """一条接入的触发记录:什么时候、因为什么触发、诊断出了什么结论。
 
@@ -430,7 +450,6 @@ class IntakeEvent(Base):
     service: Mapped[str] = mapped_column(String(128), default="")
     diagnosis_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     skipped: Mapped[str | None] = mapped_column(String(64), nullable=True)  # 被静默/停用时记原因
-
 
 
 class Incident(Base):
@@ -466,7 +485,6 @@ class Incident(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-
 class IncidentEvent(Base):
     """事故时间线:告警并入、诊断结论、修复回执、状态变更、拆单,各记一行。
 
@@ -485,27 +503,4 @@ class IncidentEvent(Base):
     # 放独立列而不是埋在 JSON 里——跨 sqlite/MySQL 的 JSON 查询没有可移植写法
     ref_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-
-class DiagnosisRun(Base):
-    """根因分析任务存档:诊断层 v0 的 run 只存内存,进程重启卡片就查无此单。
-    落库后聊天卡片历史回放/刷新/跨天都能拿到完整结论;终态才写库(进行中的轮询走内存)。"""
-    __tablename__ = "diagnosis_runs"
-
-    id: Mapped[str] = mapped_column(String(16), primary_key=True)
-    conversation_id: Mapped[int | None] = mapped_column(
-        BigInteger().with_variant(Integer(), "sqlite"), nullable=True)
-    service: Mapped[str] = mapped_column(String(128))
-    symptom: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    platform: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    status: Mapped[str] = mapped_column(String(16))   # done / failed(queued/running 不落库)
-    verdict: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    root_cause_service: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    # 用户对根因的确认:诊断结论在确认前只是系统分析,不能拿它启动修复
-    confirmation: Mapped[str] = mapped_column(String(16), server_default="pending")
-    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    confirmed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    events: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

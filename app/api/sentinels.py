@@ -41,7 +41,7 @@ DEFAULT_TRIGGERS = {
     "schedule": {"enabled": False, "mode": "interval", "interval_min": 10,
                  "cron": "0 0 * * *"},
     "webhook": {"enabled": True},
-    "threshold": {"enabled": False, "metric": "error", "op": ">", "value": None},
+    "threshold": {"enabled": False, "metric": "error", "op": ">", "value": 5},
 }
 DEFAULT_POLICY = {"silence_min": 15, "hours": [0, 24]}
 
@@ -404,17 +404,6 @@ def start_scheduler() -> None:
         _scheduler = asyncio.create_task(scheduler_loop())
 
 
-async def stop_scheduler() -> None:
-    global _scheduler
-    if _scheduler is not None and not _scheduler.done():
-        _scheduler.cancel()
-        try:
-            await _scheduler
-        except asyncio.CancelledError:
-            pass
-    _scheduler = None
-
-
 # ---------- 接口 ----------
 
 def _public(s: Sentinel, events: list[dict] | None = None) -> dict:
@@ -447,20 +436,9 @@ async def list_sentinels():
             "check_labels": CHECK_LABELS, "ops": OPS}
 
 
-def _validate_threshold(triggers: dict) -> None:
-    threshold = (triggers or {}).get("threshold") or {}
-    if threshold.get("enabled"):
-        try:
-            float(threshold.get("value"))
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=422, detail="启用指标阈值前请填写有效数值")
-
-
 @router.post("/api/sentinels")
 async def create_sentinel(body: dict):
     await ensure_tables()
-    triggers = body.get("triggers") or DEFAULT_TRIGGERS
-    _validate_threshold(triggers)
     name = str(body.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=422, detail="名称不能为空")
@@ -468,7 +446,7 @@ async def create_sentinel(body: dict):
                    target_id=body.get("target_id"),
                    services=[str(x) for x in (body.get("services") or [])][:20],
                    checks=[c for c in (body.get("checks") or []) if c in CHECK_LABELS],
-                   triggers=triggers,
+                   triggers=body.get("triggers") or DEFAULT_TRIGGERS,
                    policy=body.get("policy") or DEFAULT_POLICY,
                    action=body.get("action") or "diagnose",
                    forward_url=str(body.get("forward_url") or "")[:512],
@@ -494,7 +472,6 @@ async def update_sentinel(sid: int, body: dict):
         if "checks" in body:
             row.checks = [c for c in (body["checks"] or []) if c in CHECK_LABELS]
         if "triggers" in body and isinstance(body["triggers"], dict):
-            _validate_threshold(body["triggers"])
             row.triggers = body["triggers"]
         if "policy" in body and isinstance(body["policy"], dict):
             row.policy = body["policy"]

@@ -41,7 +41,7 @@ def score_agent(agent_name, answers_df, thinkings_df, out_path):
     with open(out_path, "a", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
         if need_header:
-            writer.writerow(["score"])
+            writer.writerow(["score"]) 
 
         for i in range(n):
             pred     = answers_df.iloc[i]["answer"]

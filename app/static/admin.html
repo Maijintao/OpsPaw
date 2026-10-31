@@ -1,1 +1,1231 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OpsPaw · 管理</title><link rel="stylesheet" href="/static/acceptance.css"><link rel="stylesheet" href="/static/platforms.css"></head><body><main class="wrap"><header class="topbar"><div><h1>管理</h1><p>查看配置状态，运行已登记的本地作业。</p></div><a class="btn" href="/">返回对话</a></header><section class="panel"><h2>配置状态</h2><div id="settings" role="status" aria-live="polite"></div></section><section class="panel"><h2>数据保留</h2><p>默认不自动清理。保存策略后仍需显式启用；事故记录会保留。</p><form id="retention"><label><input id="retention-enabled" type="checkbox"> 启用后台清理</label><div class="fields"><label>普通诊断保留天数<input id="clear-days" type="number" min="1" required></label><label>裁剪诊断证据天数<input id="slim-days" type="number" min="1" required></label><label>告警流水保留天数<input id="intake-days" type="number" min="1" required></label></div><button class="btn">保存策略</button><p id="retention-status" role="status"></p></form></section><section class="panel"><div class="section-head"><h2>作业与检查</h2><button class="btn" id="refresh">刷新</button></div><p id="status" role="status" aria-live="polite"></p><div id="items"></div></section><nav class="panel"><a class="btn" href="/kb">知识库录入</a><a class="btn" href="/rag-eval">RAG 评估</a><a class="btn" href="/review">飞轮待审</a><a class="btn" href="/observability">观测与成本</a><a class="btn" href="/alerts">告警接入</a><a class="btn" href="/incidents">事故中心</a></nav></main><script src="/static/admin.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpsPaw · 后台管理</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'><rect x='2' y='2' width='4' height='4' fill='%232b2632'/><rect x='10' y='2' width='4' height='4' fill='%232b2632'/><rect x='2' y='4' width='12' height='9' fill='%232b2632'/><rect x='3' y='3' width='2' height='3' fill='%23ff9f57'/><rect x='11' y='3' width='2' height='3' fill='%23ff9f57'/><rect x='3' y='5' width='10' height='7' fill='%23ff9f57'/><rect x='5' y='7' width='1' height='2' fill='%232b2632'/><rect x='10' y='7' width='1' height='2' fill='%232b2632'/><rect x='7' y='9' width='2' height='1' fill='%23ff8095'/></svg>" />
+  <link rel="stylesheet" href="/static/acceptance.css" />
+  <style>
+    .mods { margin-top: 12px; display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+    /* 服务卡与能力卡同一副网格:一样方正,多个服务自然并排 */
+    .mod {
+      background: var(--cream); border: 4px solid var(--ink); box-shadow: var(--shadow);
+      padding: 12px 14px 14px; display: flex; flex-direction: column;
+    }
+    .mod .head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+    .mod h3 { font-size: 15px; margin: 0; }
+    .mod .lede { color: #6d6478; font-size: 12px; line-height: 1.7; margin: 7px 0 0; }
+    .mod .headline {
+      margin: 10px 0 0; font-size: 13px; line-height: 1.7; background: var(--paper);
+      border: 2px solid var(--ink); padding: 7px 10px;
+    }
+    /* 每路数据源一个等宽小方框:几路就几等分,永远一样宽、一样高,不会按字数长短参差 */
+    .mod .kpis {
+      display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr);
+      gap: 8px; margin-top: 10px;
+    }
+    .mod .kpi {
+      border: 2px solid var(--ink); background: var(--paper); padding: 6px 10px;
+      font-size: 11.5px; line-height: 1.5; min-width: 0;
+      display: flex; flex-direction: column; justify-content: center;
+    }
+    .mod .kpi b { display: block; font-size: 15px; line-height: 1.3; }
+    .mod .kpi b.off { color: var(--error); }
+    .mod .kpi .src { color: #6d6478; word-break: break-word; }
+    .mod .note { margin-top: 8px; font-size: 11.5px; color: #6d6478; line-height: 1.7; }
+    .mod .foot { margin-top: auto; padding-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+    /* ---------- 弹窗(新增/编辑服务):浮在页面上,不再把下面的服务卡顶下去 ---------- */
+    .mask {
+      position: fixed; inset: 0; background: rgba(43,38,50,.45);
+      display: none; justify-content: center; align-items: flex-start;
+      padding: 56px 16px; overflow-y: auto; z-index: 60;
+    }
+    .mask.on { display: flex; }
+    .modal {
+      width: min(780px, 100%); background: var(--cream);
+      border: 4px solid var(--ink); box-shadow: 8px 8px 0 var(--ink);
+      padding: 16px 18px 18px;
+    }
+    /* 弹窗里复用卡片结构,外框由弹窗自己出,里面不再套第二层边框 */
+    .modal .mod, .modal .mod.wide {
+      border: none; box-shadow: none; background: transparent;
+      padding: 0; grid-column: auto;
+    }
+    .modal .mod h3 { font-size: 16px; }
+
+    /* Agent 介绍:一条一行横着排(左边名字、右边说明),不并排成三列 */
+    #agentIntro { grid-template-columns: 1fr; }
+    #agentIntro .mod { display: grid; grid-template-columns: 200px 1fr; gap: 18px; align-items: start; }
+    #agentIntro .mod .head { flex-direction: column; align-items: flex-start; gap: 8px; }
+    #agentIntro .mod .head .spacer { display: none; }
+    #agentIntro .mod .lede { margin: 0; }
+    @media (max-width: 760px) { #agentIntro .mod { grid-template-columns: 1fr; } }
+    .pill.ok { background: var(--online); }
+    .pill.attention { background: var(--fur); }
+    .pill.error { background: var(--error); color: #fff; }
+    .pill.cluster { background: var(--cream); border-style: dashed; }
+
+    /* 多云:名字前缀固定不可编辑,后半段才是人填的 */
+    .namewrap { display: flex; align-items: stretch; gap: 6px; }
+    .namewrap .prefix {
+      display: flex; align-items: center; padding: 0 10px; font-weight: 700; font-size: 13px;
+      border: 2px solid var(--ink); background: var(--cream); white-space: nowrap;
+    }
+    .namewrap input { flex: 1; min-width: 0; }
+
+    /* 多云中间页:这个集群下已经接了哪几台 */
+    .cluster-members { margin-top: 10px; border: 2px dashed rgba(43,38,50,.45); padding: 8px 10px; }
+    .cluster-members .cmlabel { font-size: 12px; color: #6d6478; margin-bottom: 6px; }
+    .cluster-members .cmrow {
+      display: flex; align-items: center; gap: 8px; padding: 4px 0;
+      border-top: 1px dashed rgba(43,38,50,.2); font-size: 12.5px;
+    }
+    .cluster-members .cmrow:first-of-type { border-top: none; }
+
+    /* 空态/表单/错误卡横跨整行:单卡时右侧不留突兀空白,自适应拉满 */
+    .mod.wide { grid-column: 1 / -1; }
+
+    /* 分区标题:服务检测区(Agent 能力区共用) */
+    .sec { margin: 22px 0 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .sec h2 { font-size: 15px; margin: 0; letter-spacing: 1px; }
+    .sec .sec-sub { color: #6d6478; font-size: 12px; }
+
+    /* Agent 工具一览:主题分布同款整宽面板,Excel 式网格:左列名+竖线分隔+右列描述 */
+    .tools-panel {
+      grid-column: 1 / -1;   /* 整宽:不被 .mods 网格塞进单个 340px 格子 */
+      margin-top: 0; background: var(--cream); border: 4px solid var(--ink);
+      box-shadow: var(--shadow); padding: 0;
+    }
+    .tools-panel .trow,
+    .tools-panel .thead {
+      display: grid; grid-template-columns: 15em 1fr;
+      border-top: 2px dashed rgba(43,38,50,.25);
+    }
+    .tools-panel .thead { background: var(--paper); border-top: none; }
+    .tools-panel .thead div {
+      font-size: 12px; font-weight: 700; color: #6d6478;
+      padding: 7px 14px; border-right: 2px solid rgba(43,38,50,.5);
+      letter-spacing: 1px;
+    }
+    .tools-panel .thead div:last-child { border-right: none; }
+    .tools-panel .tname {
+      text-align: left; font-weight: 700; font-size: 13px;
+      padding: 8px 14px; border-right: 2px solid rgba(43,38,50,.5);
+    }
+    .tools-panel .tname .pills {
+      display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px;
+    }
+    .tools-panel .tdesc {
+      padding: 8px 14px; font-size: 12.5px; line-height: 1.7; word-break: break-word;
+      display: flex; align-items: center;
+    }
+
+    /* 服务接入表单 */
+    .form { display: grid; gap: 10px; margin-top: 10px; }
+    .form .frow { display: grid; gap: 3px; }
+    .form label { font-size: 11.5px; color: #6d6478; }
+    .form input, .form select {
+      font: inherit; font-size: 13px; border: 3px solid var(--ink);
+      background: var(--paper); padding: 6px 9px; width: 100%;
+    }
+    .form input:focus, .form select:focus { outline: 3px solid var(--fur); outline-offset: -1px; }
+    .form .src-row { display: flex; gap: 8px; }
+    .form .src-row select { width: 170px; flex: none; }
+    .form .src-row input { flex: 1; }
+
+    /* 修复 Agent 区块:表单里内嵌的一段,沿用整页的粗边框 + 硬阴影,不另起一套长相 */
+    .repair-sec {
+      margin-top: 4px; border: 3px solid var(--ink); background: var(--paper);
+      padding: 10px 12px;
+    }
+    .repair-sec .rhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .repair-sec .rhead b { font-size: 12.5px; letter-spacing: .5px; }
+    .repair-sec .rnote { font-size: 11.5px; color: #6d6478; line-height: 1.75; margin: 6px 0 0; }
+    .repair-sec .efield { display: grid; gap: 3px; margin-top: 8px; }
+    .repair-sec .efield label { font-size: 11.5px; color: #6d6478; }
+    .repair-sec .efield input {
+      font: inherit; font-size: 12px; border: 2px solid var(--ink);
+      background: var(--paper); padding: 5px 8px; width: 100%;
+    }
+    .repair-sec .efield input:focus { outline: 3px solid var(--fur); outline-offset: -1px; }
+    .repair-list { display: grid; gap: 6px; margin-top: 8px; }
+    .repair-list .empty { font-size: 11.5px; color: #6d6478; }
+    .repair-item {
+      border: 2px solid var(--ink); background: var(--cream); padding: 6px 9px;
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px;
+    }
+    .repair-item .meta { color: #6d6478; font-size: 11px; }
+    .repair-item .grow { flex: 1; }
+    .cmdbox {
+      margin-top: 8px; border: 3px solid var(--ink); background: var(--ink);
+      color: #f3ead9; padding: 9px 11px; font-size: 11.5px; line-height: 1.7;
+      white-space: pre-wrap; word-break: break-all; font-family: inherit;
+    }
+    .cmdbar { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+
+    /* 修复动作:计划卡沿用整页粗边框,状态用同一套药丸;每行一个功能,标签+控件对齐 */
+    .repair-act { margin-top: 12px; border-top: 3px dashed rgba(43,38,50,.35); padding-top: 10px; }
+    .repair-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+    .repair-actions select, .repair-actions input {
+      font: inherit; font-size: 12px; border: 2px solid var(--ink);
+      background: var(--paper); padding: 4px 7px;
+    }
+    .repair-actions select { flex: 0 0 170px; width: 170px; }
+    .repair-actions input { flex: 1; min-width: 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <h1>后台管理</h1>
+      <span class="sub">服务接入(检测靶点) + 各后台模块,不用回终端</span>
+      <span class="spacer"></span>
+      <button class="btn" id="refreshBtn">刷新</button>
+    </div>
+
+    <div class="sec">
+      <h2>服务检测</h2>
+      <span class="spacer"></span>
+      <button class="btn sm go" id="addTargetBtn">＋ 新增服务</button>
+    </div>
+    <div class="mods" id="targets"><div class="miss">加载中…</div></div>
+
+    <div class="sec">
+      <h2>Agent 介绍</h2>
+      <span class="spacer"></span>
+      <button class="btn sm go" id="toolsDetailBtn">查看工具详情 →</button>
+    </div>
+    <div class="mods" id="agentIntro">
+      <div class="mod">
+        <div class="head"><h3>归因 agent</h3><span class="spacer"></span><span class="pill">只看不摸</span></div>
+        <p class="lede">
+          负责回答「为什么坏」。你只说现象——下单失败、页面卡、平台好像挂了，它会先扫一遍
+          所有接入平台挑出最可疑的服务，再拉指标、链路、日志和调用关系交叉验证，最后给一张
+          诊断卡：根因落在哪个服务、证据链是什么、属于哪类故障、有多大把握。它的边界是
+          只看不摸，不改配置、不重启任何东西；数据没接入或某一维采不到时，它会如实说
+          哪一块看不见，不会硬编一个结论。
+        </p>
+      </div>
+      <div class="mod">
+        <div class="head"><h3>修复 agent</h3><span class="spacer"></span><span class="pill">白名单动作</span></div>
+        <p class="lede">
+          负责把确认过的根因修掉。你在诊断卡上点头之后它才动手：先复核现场（容器状态、
+          日志、功能开关），再选一个动作执行——重启、启动、停止、重建、切换开关、复位全部
+          开关，执行完再查一遍确认，最后写一张四段回执（现场确认 / 修复过程 / 结果确认 /
+          它的看法）。它的边界是：只在接了连接器的那台机器上操作，动作仅限白名单那几样；
+          修不了会停下来说清原因，不会反复硬试。
+        </p>
+      </div>
+      <div class="mod">
+        <div class="head"><h3>问答 agent</h3><span class="spacer"></span><span class="pill">有据可查</span></div>
+        <p class="lede">
+          负责日常问答和指路：规范、流程、阈值、处置步骤查知识库，答案带编号出处；问某个
+          服务现在怎么样，它去查真实的指标、链路和日志；要建工单或提变更，它按流程走确认。
+          它的边界是只答有据可查的——查不到就说查不到，并给通用建议；写操作只有建工单
+          一个入口，而且必须你确认才会落库。
+        </p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>API 设置</h2>
+    </div>
+    <div class="mods" id="apiSettings"><div class="miss">加载中…</div></div>
+
+    <div class="sec">
+      <h2>数据保留</h2>
+    </div>
+    <div class="mods" id="retentionBox"><div class="miss">加载中…</div></div>
+
+    <div class="sec">
+      <h2>Agent 能力总览</h2>
+    </div>
+    <div class="tip">
+      口径：<b>正常</b>这块是活的且没有待办；<b>要干活</b>有待办或两边数对不上；
+      <b>没数据</b>还没跑过，进去按一下就有；<b>读数失败</b>这块的依赖没起（mysql / Milvus /
+      嵌入上游 / 分类器 :8110），只影响它自己那张卡。
+    </div>
+
+    <div class="mods" id="mods"><div class="miss">加载中…</div></div>
+  </div>
+
+  <div class="mask" id="mask"></div>
+  <div id="toast"></div>
+  <script src="/static/admin.js"></script>
+  <script src="/static/acceptance.js"></script>
+  <script>
+    const LABEL = { ok: "正常", attention: "要干活", missing: "没数据", error: "读数失败" };
+    const TARGET_LABEL = { ok: "在线", attention: "部分离线", error: "全离线" };
+    const REPAIR_ACTION_LABEL = {
+      list_services: "列出服务", inspect_service: "查看服务", service_logs: "查看日志",
+      service_events: "查看事件", service_resources: "查看资源", recreate_service: "重建服务",
+      restart_service: "重启服务", start_service: "启动服务", stop_service: "停止服务"
+    };
+    const REPAIR_EVENT_LABEL = {
+      connector_connected: "连接器上线", connector_revoked: "连接器撤销",
+      repair_plan_created: "计划创建", repair_approval_created: "计划批准",
+      repair_execution_started: "开始执行", repair_execution_finished: "执行结束",
+      repair_verification_finished: "验证完成", repair_human_review_required: "转人工",
+      repair_symptom_resolved: "症状已消失,未执行",
+    };
+    const SOURCE_LABEL = { prometheus: "指标 (Prometheus / PromQL)", jaeger: "链路 (Jaeger / APM)", loki: "日志 (Loki / LogQL)", mcp: "MCP Server (通用)" };
+    // 小方框里用短名(整句太长会把等宽的框撑成两行);完整叫法留给提示条和 toast
+    const SOURCE_SHORT = { prometheus: "指标 · Prometheus", jaeger: "链路 · Jaeger", loki: "日志 · Loki", mcp: "MCP Server" };
+const SOURCE_PLACEHOLDER = {
+  prometheus: "http://localhost:9090",
+  jaeger: "http://localhost:16686",
+  loki: "http://localhost:3100",
+  mcp: "http://主机:端口/mcp (Streamable HTTP 端点)",
+};
+
+    /* ---------- Agent 能力卡(原有六张,取数逻辑不动) ---------- */
+
+    function card(m) {
+      const box = el("div", "mod " + m.status);
+      const head = el("div", "head");
+      head.appendChild(el("h3", null, m.title));
+      head.appendChild(el("span", "spacer"));
+      head.appendChild(el("span", "pill " + m.status, LABEL[m.status] || m.status));
+      box.appendChild(head);
+      box.appendChild(el("p", "lede", m.lede));
+      box.appendChild(el("div", "headline", m.headline));
+      if (m.metrics.length) {
+        const kpis = el("div", "kpis");
+        for (const k of m.metrics) {
+          const kpi = el("div", "kpi");
+          kpi.appendChild(el("b", null, k.value === null || k.value === undefined ? "—" : k.value));
+          kpi.appendChild(document.createTextNode(k.label));
+          kpis.appendChild(kpi);
+        }
+        box.appendChild(kpis);
+      }
+      if (m.note) box.appendChild(el("div", "note", m.note));
+      const foot = el("div", "foot");
+      const a = el("a", "btn go", "进入 " + m.title + " →");
+      a.href = m.page;
+      foot.appendChild(a);
+      box.appendChild(foot);
+      return box;
+    }
+
+    /* 快照加载:数据本地留一份(sessionStorage),进来先秒画上次内容再后台刷新——
+       海外服务器一个往返几百毫秒,"加载中…"不该每次跳出来;失败且有旧数据时静默保旧 */
+    async function snapLoad(key, url, renderFn, errFn, opts) {
+      let last = null;
+      try { last = JSON.parse(sessionStorage.getItem("adm_" + key) || "null"); } catch (e) {}
+      if (last) { try { renderFn(last, opts); } catch (e) { /* 旧数据画挂了就等新的 */ } }
+      try {
+        const d = await api(url);
+        try { sessionStorage.setItem("adm_" + key, JSON.stringify(d)); } catch (e) {}
+        renderFn(d, opts);
+      } catch (e) {
+        if (!last) errFn(e);
+      }
+    }
+
+    async function load() {
+      const box = $("mods");
+      await snapLoad("overview", "/api/admin/overview",
+        (d) => {
+          box.textContent = "";
+          for (const m of d.modules) box.appendChild(card(m));
+        },
+        (e) => {
+          box.textContent = "";
+          const errCard = modCard("取数失败", "error", "Agent 能力总览取数失败:" + e.message,
+            "依赖(MySQL 等)没起或服务刚改完代码没重启,重启后再试。");
+          errCard.classList.add("wide");
+          box.appendChild(errCard);
+        });
+    }
+
+    /* ---------- 服务检测(人工接入:数据源列表随便配,保存即校验) ---------- */
+
+    function modCard(title, status, headline, lede, pillText) {
+      /* 空态/错误态也用模块卡同款结构:实线粗边框 + 奶油底 + 硬阴影,和整页一个长相 */
+      const box = el("div", "mod " + (status || ""));
+      const head = el("div", "head");
+      head.appendChild(el("h3", null, title));
+      head.appendChild(el("span", "spacer"));
+      if (pillText !== false) {
+        head.appendChild(el("span", "pill " + (status || "missing"), pillText || (status === "error" ? "读数失败" : "未接入")));
+      }
+      box.appendChild(head);
+      if (lede) box.appendChild(el("p", "lede", lede));
+      if (headline) box.appendChild(el("div", "headline", headline));
+      return box;
+    }
+
+    function field(labelText, node) {
+      const row = el("div", "frow");
+      row.appendChild(el("label", null, labelText));
+      row.appendChild(node);
+      return row;
+    }
+
+    function textInput(placeholder, value) {
+      const input = el("input");
+      input.placeholder = placeholder;
+      input.value = value || "";
+      return input;
+    }
+
+    function typeSelect(current) {
+      const sel = el("select");
+      for (const [type, label] of Object.entries(SOURCE_LABEL)) {
+        const opt = el("option", null, label);
+        opt.value = type;
+        sel.appendChild(opt);
+      }
+      sel.value = current || "prometheus";
+      return sel;
+    }
+
+    function addSourceRow(list, type, url, hdrs) {
+      const row = el("div", "src-row");
+      const sel = typeSelect(type);
+      const input = textInput(SOURCE_PLACEHOLDER[sel.value], url);
+      input.className = "src-url";
+      /* 可选补充口:鉴权/自定义请求头。云托管端点要 token、内网网关要凭据,都从这里进;
+         不填就直连——简单场景零负担,复杂场景有地方写 */
+      const hinput = textInput('可选:请求头 JSON,如 {"Authorization":"Bearer xxx"}',
+        hdrs && Object.keys(hdrs).length ? JSON.stringify(hdrs) : "");
+      hinput.className = "src-hdrs";
+      sel.addEventListener("change", () => { input.placeholder = SOURCE_PLACEHOLDER[sel.value]; });
+      const rm = el("button", "btn sm", "删");
+      rm.title = "移除这路数据源";
+      rm.addEventListener("click", () => row.remove());
+      row.appendChild(sel);
+      row.appendChild(input);
+      row.appendChild(hinput);
+      row.appendChild(rm);
+      list.appendChild(row);
+    }
+
+    /* 表单是全局单例的浮层状态:null=关着;开着的编辑/新增不顶掉服务列表,
+       而是以一张宽卡插在列表最前——每张服务卡的数据只来自它自己那一行,互不掺和 */
+    let formState = null;   // null | {mode:"create"} | {mode:"edit", target}
+    let repairTimer = null; // 修复连接器状态轮询:表单关掉就停,不留后台定时器
+
+    function stopRepairPoll() {
+      if (repairTimer) { clearInterval(repairTimer); repairTimer = null; }
+    }
+
+    function closeForm() { stopRepairPoll(); formState = null; loadTargets(); }
+
+    /* 新增/编辑走弹窗:浮层盖住页面,底下的服务卡不动,关掉就回到原样 */
+    function openModal(node) {
+      const mask = $("mask");
+      mask.textContent = "";
+      const box = el("div", "modal");
+      box.appendChild(node);
+      mask.appendChild(box);
+      mask.classList.add("on");
+    }
+
+    function closeModal() {
+      const mask = $("mask");
+      mask.classList.remove("on");
+      mask.textContent = "";
+    }
+
+    /* 修复 Agent:一个平台可以挂多个连接器(多宿主机/多控制面),所以这里是列表不是单状态。
+       命令按平台生成,令牌 30 分钟、用一次即废;连接器主动出站,甲方不用开端口。 */
+    function repairPanel(t) {
+      const sec = el("div", "repair-sec");
+      const head = el("div", "rhead");
+      head.appendChild(el("b", null, "修复 Agent(可选)"));
+      head.appendChild(el("span", "spacer"));
+      const pill = el("span", "pill missing", "未接入");
+      head.appendChild(pill);
+      sec.appendChild(head);
+      sec.appendChild(el("p", "rnote",
+        "在服务所在机器上执行下面这行命令,连接器会主动连过来;不用开放端口,也不用给我们 SSH。"));
+
+      const epWrap = el("div", "efield");
+      epWrap.appendChild(el("label", null,
+        "连接器访问 OpsPaw 的地址(那台机器要能访问到;本机调试就是当前地址)"));
+      const epInput = textInput("http://主机:端口", location.origin);
+      epWrap.appendChild(epInput);
+      sec.appendChild(epWrap);
+
+      const list = el("div", "repair-list");
+      sec.appendChild(list);
+
+      const bar = el("div", "cmdbar");
+      const genBtn = el("button", "btn sm go", "生成接入命令");
+      genBtn.type = "button";
+      bar.appendChild(genBtn);
+      const testBtn = el("button", "btn sm", "测试连接");
+      testBtn.type = "button";
+      testBtn.style.display = "none";
+      bar.appendChild(testBtn);
+      const evBtn = el("button", "btn sm", "最近事件");
+      evBtn.type = "button";
+      bar.appendChild(evBtn);
+      sec.appendChild(bar);
+
+      const out = el("div");
+      sec.appendChild(out);
+
+      /* ---- 修复动作:计划由修复 agent 按诊断与容器现状自己定,admin 只留审批模式开关。
+              执行链路:计划 → 审批(或自动通过) → 执行 → 服务端独立复检 ---- */
+      const actSec = el("div", "repair-act");
+      actSec.style.display = "none";
+
+      /* ---- 修复审批模式:二选一,全局生效 ---- */
+      const autoNote = el("div", "rnote", "修复审批模式:读取中…");
+      const autoBar = el("div", "repair-actions");
+      autoBar.appendChild(el("span", "rlabel", "修复审批"));
+      const autoSel = el("select");
+      const oManual = el("option", null, "人工审批(默认)");
+      oManual.value = "manual";
+      const oAuto = el("option", null, "自动通过");
+      oAuto.value = "auto";
+      autoSel.appendChild(oManual);
+      autoSel.appendChild(oAuto);
+      const autoSaveBtn = el("button", "btn sm", "保存");
+      autoSaveBtn.type = "button";
+      autoBar.appendChild(autoSel);
+      autoBar.appendChild(autoSaveBtn);
+      actSec.appendChild(autoNote);
+      actSec.appendChild(autoBar);
+      async function refreshAutoNote() {
+        try {
+          const d = await api("/api/repair/approval-mode");
+          autoSel.value = d.mode;
+          autoNote.textContent = d.mode === "auto"
+            ? "修复审批:自动通过——生成计划后免人工确认直接执行(仅限重启/启动白名单动作,其余仍要审批)。"
+            : "修复审批:人工审批——所有修复动作生成计划后,需人工确认才执行。";
+        } catch (e) { autoNote.textContent = "修复审批模式读取失败:" + e.message; }
+      }
+      autoSaveBtn.addEventListener("click", async () => {
+        try {
+          await api("/api/repair/approval-mode", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mode: autoSel.value }),
+          });
+          toast("修复审批模式已保存:" + (autoSel.value === "auto" ? "自动通过" : "人工审批"));
+          refreshAutoNote();
+        } catch (e) { toast(e.message, true); }
+      });
+      refreshAutoNote();
+
+      sec.appendChild(actSec);
+
+      const eventsBox = el("div");
+      sec.appendChild(eventsBox);
+
+      let onlineConn = null;
+
+      let lastOnline = -1;
+
+      async function refresh() {
+        let d;
+        try {
+          d = await api("/api/targets/" + t.id + "/repair");
+        } catch (e) {
+          return;   // 网络抖动下一轮再拉,不打断表单
+        }
+        list.textContent = "";
+        // 已撤销的连接器不进列表:撤销即失效,留一行"已撤销"只会占地方搅浑水
+        const conns = (d.connectors || []).filter((c) => c.status !== "revoked");
+        if (!conns.length) {
+          list.appendChild(el("div", "empty", "还没有连接器。生成命令后到服务所在机器执行即可。"));
+        }
+        for (const c of conns) {
+          const item = el("div", "repair-item");
+          item.appendChild(el("b", null, c.name));
+          item.appendChild(el("span", "pill " +
+            (c.status === "online" ? "ok" : c.status === "offline" ? "attention" : "error"),
+            c.status === "online" ? "在线" : c.status === "offline" ? "离线" : "已撤销"));
+          const caps = (c.capabilities || [])
+            .map((x) => REPAIR_ACTION_LABEL[x.action] || x.action).join("、");
+          const rt = ((c.host_info || {}).runtime || "docker");
+          item.appendChild(el("div", "meta",
+            "运行时 " + (rt === "k8s" ? "k8s" : rt === "none" ? "未识别(只能只读)" : "docker")
+            + " · 最后心跳 " + fmtTime(c.last_seen_at) + " · 能力 " + (caps || "未上报")));
+          item.appendChild(el("span", "grow"));
+          if (c.status !== "revoked") {
+            const rev = el("button", "btn sm no", "撤销");
+            rev.type = "button";
+            rev.addEventListener("click", async () => {
+              if (!confirm("撤销后这台连接器立即失效,确定?")) return;
+              try {
+                await api("/api/repair/connectors/" + c.id + "/revoke", { method: "POST" });
+                toast("已撤销 " + c.name);
+                refresh();
+              } catch (e) {
+                toast("撤销失败:" + e.message, true);
+              }
+            });
+            item.appendChild(rev);
+          }
+          list.appendChild(item);
+        }
+        const online = d.online || 0;
+        pill.className = "pill " + (online ? "ok" : "missing");
+        pill.textContent = online ? online + " 个在线" : "未接入";
+        testBtn.style.display = online ? "" : "none";
+        onlineConn = conns.find((c) => c.status === "online") || null;
+        actSec.style.display = onlineConn ? "" : "none";
+        if (lastOnline === 0 && online > 0) toast("修复连接器已上线");
+        lastOnline = online;
+      }
+
+      genBtn.addEventListener("click", async () => {
+        genBtn.disabled = true;
+        try {
+          const d = await api("/api/targets/" + t.id + "/repair/enrollment", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ endpoint: epInput.value.trim() }),
+          });
+          out.textContent = "";
+          out.appendChild(el("pre", "cmdbox", d.command));
+          const copy = el("button", "btn sm go", "复制命令");
+          copy.type = "button";
+          copy.addEventListener("click", async () => {
+            try {
+              await navigator.clipboard.writeText(d.command);
+              toast("命令已复制");
+            } catch (e) {
+              const ta = document.createElement("textarea");
+              ta.value = d.command;
+              document.body.appendChild(ta);
+              ta.select();
+              document.execCommand("copy");
+              ta.remove();
+              toast("命令已复制");
+            }
+          });
+          const hint = el("div", "rnote",
+            "命令 " + d.ttl_minutes + " 分钟内有效、只能用一次;执行完这里会自动变成在线。");
+          out.appendChild(copy);
+          out.appendChild(hint);
+        } catch (e) {
+          toast("生成失败:" + e.message, true);
+        }
+        genBtn.disabled = false;
+      });
+
+      testBtn.addEventListener("click", async () => {
+        testBtn.disabled = true;
+        testBtn.textContent = "测试中…";
+        try {
+          const r = await api("/api/targets/" + t.id + "/repair/probe", { method: "POST" });
+          const svcs = ((r.data || {}).services || []).map((s) => s.service);
+          out.textContent = "";
+          out.appendChild(el("div", "rnote",
+            (r.ok ? "连接正常:" : "动作执行失败:") + (r.message || "") +
+            (svcs.length ? "(" + svcs.slice(0, 12).join("、") + (svcs.length > 12 ? " …" : "") + ")" : "")));
+        } catch (e) {
+          toast("测试失败:" + e.message, true);
+        }
+        testBtn.disabled = false;
+        testBtn.textContent = "测试连接";
+      });
+
+      let eventsOpen = false;
+      evBtn.addEventListener("click", async () => {
+        eventsOpen = !eventsOpen;
+        evBtn.textContent = eventsOpen ? "收起事件" : "最近事件";
+        eventsBox.textContent = "";
+        if (!eventsOpen) return;
+        try {
+          const d = await api("/api/targets/" + t.id + "/repair/events?limit=15");
+          const panel = el("div", "repair-plan");
+          if (!(d.events || []).length) {
+            panel.appendChild(el("div", "meta", "还没有事件"));
+          }
+          for (const ev of d.events || []) {
+            const row = el("div", "row");
+            row.appendChild(el("span", "meta", fmtTime(ev.created_at)));
+            row.appendChild(el("b", null, REPAIR_EVENT_LABEL[ev.event_type] || ev.event_type));
+            const p = ev.payload || {};
+            const bits = [];
+            if (p.action) bits.push(p.action);
+            if (p.service) bits.push(p.service);
+            if (p.status) bits.push(p.status);
+            if (p.name) bits.push(p.name);
+            if (p.ticket_no) bits.push("工单 " + p.ticket_no);
+            if (bits.length) row.appendChild(el("span", "meta", bits.join(" · ")));
+            panel.appendChild(row);
+          }
+          eventsBox.appendChild(panel);
+        } catch (e) {
+          eventsBox.appendChild(el("div", "meta", "事件读取失败:" + e.message));
+        }
+      });
+
+      refresh();
+      repairTimer = setInterval(refresh, 2000);
+      return sec;
+    }
+
+    /* 新建第一步:先问单云还是多云集群。单云=老流程;多云进中间页,一个集群下逐台接入。 */
+    function deployChooser() {
+      const box = el("div", "mod wide");
+      const head = el("div", "head");
+      head.appendChild(el("h3", null, "新增服务 · 先选部署形态"));
+      box.appendChild(head);
+      box.appendChild(el("p", "lede",
+        "一套系统只在一个云/一台机器上 → 选单云,和以前一样填一张卡。"
+        + "同一套系统部署在多个云/多台机器 → 选多云集群,先给集群起个名,再逐台接进来,"
+        + "子卡片名字自动带「集群名-」前缀。"));
+
+      const bar = el("div", "foot");
+      const single = el("button", "btn go", "单云部署");
+      single.addEventListener("click", () => {
+        formState = { mode: "create", cluster: "" };
+        loadTargets();
+      });
+      const multi = el("button", "btn go", "多云集群");
+      multi.addEventListener("click", () => {
+        formState = { mode: "cluster", cluster: "" };
+        loadTargets();
+      });
+      const cancel = el("button", "btn", "取消");
+      cancel.addEventListener("click", closeForm);
+      bar.appendChild(single);
+      bar.appendChild(multi);
+      bar.appendChild(cancel);
+      box.appendChild(bar);
+      return box;
+    }
+
+    /* 多云中间页:给集群起名 → 看这个集群已经接了几台 → 继续加下一台。 */
+    function clusterCard(targets) {
+      const box = el("div", "mod wide");
+      const head = el("div", "head");
+      head.appendChild(el("h3", null, "新建多云集群"));
+      box.appendChild(head);
+      box.appendChild(el("p", "lede",
+        "集群名是这套系统的名字(如 otel)。之后在这个集群下建的每一台,名字都会自动变成"
+        + "「集群名-你填的后半段」,比如 otel-redis。归因和修复 agent 会据此知道"
+        + "这几台是同一套系统的不同云,诊断时不会把跨云的数据混着算。"));
+
+      const form = el("div", "form");
+      const clusterInput = textInput("如 otel", formState.cluster || "");
+      form.appendChild(field("集群名称 *", clusterInput));
+      box.appendChild(form);
+
+      // 已在这个集群下的卡片:让人看清"这套系统目前接了几朵云"
+      const name = (formState.cluster || "").trim();
+      const members = (targets || []).filter((t) => (t.cluster || "") === name && name);
+      if (name && members.length) {
+        const list = el("div", "cluster-members");
+        list.appendChild(el("div", "cmlabel", "已接入 " + members.length + " 台"));
+        for (const m of members) {
+          const row = el("div", "cmrow");
+          row.appendChild(el("b", null, m.name));
+          row.appendChild(el("span", "pill " + (m.status === "ok" ? "ok" : "attention"),
+            m.status === "ok" ? "在线" : "部分离线"));
+          list.appendChild(row);
+        }
+        box.appendChild(list);
+      }
+
+      const foot = el("div", "foot");
+      const next = el("button", "btn go", name ? "＋ 在这个集群下新增一台" : "下一步:新增第一台");
+      next.addEventListener("click", () => {
+        const nm = clusterInput.value.trim();
+        if (!nm) { toast("先给集群起个名字", true); return; }
+        formState = { mode: "create", cluster: nm };
+        loadTargets();
+      });
+      const back = el("button", "btn", "返回");
+      back.addEventListener("click", () => {
+        formState = { mode: "choose" };
+        loadTargets();
+      });
+      const cancel = el("button", "btn", "取消");
+      cancel.addEventListener("click", closeForm);
+      foot.appendChild(next);
+      foot.appendChild(back);
+      foot.appendChild(cancel);
+      box.appendChild(foot);
+      return box;
+    }
+
+    function formCard(t, cluster) {
+      stopRepairPoll();   // 重建表单先停旧定时器,否则每开一次多一个
+      const editing = !!t;
+      const clusterName = (cluster || "").trim();
+      const box = el("div", "mod wide");   // 表单横跨整行,输入框有舒展的空间
+      const head = el("div", "head");
+      head.appendChild(el("h3", null, editing ? "编辑服务 · " + t.name
+        : (clusterName ? "接入服务 · 集群 " + clusterName : "接入服务")));
+      box.appendChild(head);
+      box.appendChild(el("p", "lede",
+        "数据源按类型人工配置,同类型可配多路;保存时立即探活,探不通也能存(服务进程可能还没起)。"));
+
+      const form = el("div", "form");
+      const name = textInput(clusterName && !editing ? "如 redis / 华东" : "如 otel-demo / 本地压测环境",
+                             editing ? t.name : "");
+      let editCluster = null;
+      if (clusterName && !editing) {
+        // 前缀固定不可编辑:名字统一成「集群名-后半段」,人好认、agent 也好认
+        const wrap = el("div", "namewrap");
+        wrap.appendChild(el("span", "prefix", clusterName + "-"));
+        wrap.appendChild(name);
+        form.appendChild(field("服务名称 *", wrap));
+      } else {
+        form.appendChild(field("服务名称 *", name));
+      }
+      if (editing) {
+        // 已存在的卡也能归到集群里(老卡转多云);留空就是单云
+        editCluster = textInput("留空=单云;填集群名就归到那个集群", t.cluster || "");
+        form.appendChild(field("多云集群(可选)", editCluster));
+      }
+
+      form.appendChild(field("观测数据源(至少一路;类型决定探活与后续查询方式)", el("span")));
+      const list = el("div", "frow");
+      list.style.gap = "8px";
+      const sources = editing ? t.sources : [];
+      if (sources.length) {
+        for (const s of sources) addSourceRow(list, s.type, s.url, s.headers);
+      } else {
+        addSourceRow(list, "prometheus", "");
+      }
+      form.appendChild(list);
+      const addBtn = el("button", "btn sm", "＋ 添加一路数据源");
+      addBtn.type = "button";
+      addBtn.addEventListener("click", () => addSourceRow(list, "prometheus", ""));
+      form.appendChild(addBtn);
+      box.appendChild(form);
+
+      if (editing) {
+        box.appendChild(repairPanel(t));
+      } else {
+        box.appendChild(el("p", "note",
+          "保存后回到这张卡点「编辑」,就能生成修复 Agent 的接入命令。"));
+      }
+
+      const foot = el("div", "foot");
+      const save = el("button", "btn go", "保存并探活");
+      const cancel = el("button", "btn", "取消");
+      save.addEventListener("click", async () => {
+        if (!name.value.trim()) { toast("服务名称不能为空", true); return; }
+        let srcs;
+        try {
+          srcs = [...list.querySelectorAll(".src-row")].map((row) => {
+            const s = {
+              type: row.querySelector("select").value,
+              url: row.querySelector(".src-url").value.trim(),
+            };
+            const raw = row.querySelector(".src-hdrs").value.trim();
+            if (raw) {
+              const h = JSON.parse(raw);   // 写错就当场报,不带病保存
+              if (typeof h !== "object" || Array.isArray(h) || h === null) throw new Error("必须是 {键:值} 对象");
+              s.headers = h;
+            }
+            return s;
+          }).filter((s) => s.url);
+        } catch (e) {
+          toast("请求头格式不对:" + e.message, true); return;
+        }
+        if (!srcs.length) { toast("至少配一路数据源(类型 + 地址)", true); return; }
+        const suffix = name.value.trim();
+        if (clusterName && !editing && !suffix) { toast("填一下这台的后半段名字(如 redis)", true); return; }
+        const fullName = (clusterName && !editing) ? clusterName + "-" + suffix : suffix;
+        save.disabled = true;
+        try {
+          const d = await api(editing ? "/api/targets/" + t.id : "/api/targets", {
+            method: editing ? "PUT" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: fullName, sources: srcs,
+                                   cluster: editing ? (editCluster.value.trim()) : clusterName }),
+          });
+          toast("已保存。探活:" + headlineOf(d), d.status !== "ok");
+          if (!editing && clusterName) {
+            formState = { mode: "cluster", cluster: clusterName };   // 回中间页,接着加下一台
+            loadTargets();
+          } else {
+            closeForm();
+          }
+        } catch (e) {
+          toast("保存失败:" + e.message, true);
+          save.disabled = false;
+        }
+      });
+      cancel.addEventListener("click", closeForm);
+      foot.appendChild(save);
+      foot.appendChild(cancel);
+      box.appendChild(foot);
+      return box;
+    }
+
+    function headlineOf(t) {
+      const bits = [];
+      for (const h of t.health) {
+        const label = SOURCE_LABEL[h.type] || h.type;
+        bits.push(label + (h.online ? " 在线" : " 离线(" + h.detail + ")"));
+      }
+      return bits.join(" · ") || "还没配数据源";
+    }
+
+    function targetCard(t) {
+      /* 方正紧凑:默认只露一行摘要,逐路健康与按钮详情收进「显示详情」 */
+      const box = el("div", "mod " + t.status);
+      const head = el("div", "head");
+      head.appendChild(el("h3", null, t.name));
+      if (t.cluster) head.appendChild(el("span", "pill cluster", "集群 · " + t.cluster));
+      head.appendChild(el("span", "spacer"));
+      head.appendChild(el("span", "pill " + t.status, TARGET_LABEL[t.status] || "待配置"));
+      box.appendChild(head);
+
+      const onlineN = t.health.filter((h) => h.online).length;
+      box.appendChild(el("p", "lede",
+        t.health.length + " 路数据源 · " + onlineN + "/" + t.health.length + " 在线 · 接入于 " + fmtTime(t.created_at)));
+      const rp = t.repair || { total: 0, online: 0, names: [] };
+      box.appendChild(el("p", "lede",
+        "修复 Agent:" + (rp.total
+          ? (rp.online ? rp.online + "/" + rp.total + " 个连接器在线" : "全部离线")
+          : "未接入")
+        + (rp.names && rp.names.length ? "(" + rp.names.join("、") + ")" : "")));
+
+      const detail = el("div");
+      detail.style.display = "none";
+      // 详情只放等宽小方框:每路数据源一格,在线/离线 + 类型一眼扫完。
+      // 原来那行"指标…在线 · 链路…在线 · 日志…在线"和下面的框说的是同一件事,已去掉。
+      const kpis = el("div", "kpis");
+      for (const h of t.health) {
+        const kpi = el("div", "kpi");
+        const b = el("b", h.online ? null : "off", h.online ? "在线" : "离线");
+        kpi.appendChild(b);
+        const src = el("span", "src", SOURCE_SHORT[h.type] || h.type);
+        kpi.appendChild(src);
+        if (!h.online && h.detail) kpi.title = h.detail;
+        kpis.appendChild(kpi);
+      }
+      detail.appendChild(kpis);
+      box.appendChild(detail);
+
+      const foot = el("div", "foot");
+      const toggle = el("button", "btn sm", "显示详情");
+      toggle.addEventListener("click", () => {
+        const open = detail.style.display === "none";
+        detail.style.display = open ? "block" : "none";
+        toggle.textContent = open ? "收起详情" : "显示详情";
+      });
+      const edit = el("button", "btn sm", "编辑");
+      edit.addEventListener("click", () => { formState = { mode: "edit", target: t }; loadTargets(); });
+      const repairBtn = el("button", "btn sm", rp.total ? "修复 Agent" : "接入修复");
+      repairBtn.addEventListener("click", () => {
+        formState = { mode: "edit", target: t };
+        loadTargets();
+      });
+      const del = el("button", "btn sm no", "断开");
+      del.addEventListener("click", async () => {
+        if (!confirm("断开「" + t.name + "」后,Agent 将不再使用它的数据源,配置不保留。确定?")) return;
+        try {
+          await api("/api/targets/" + t.id, { method: "DELETE" });
+          toast("已断开 " + t.name);
+          loadTargets();
+        } catch (e) {
+          toast("断开失败:" + e.message, true);
+        }
+      });
+      foot.appendChild(toggle);
+      foot.appendChild(edit);
+      foot.appendChild(repairBtn);
+      foot.appendChild(del);
+      box.appendChild(foot);
+      return box;
+    }
+
+    function emptyCard() {
+      const box = modCard("未接入服务", "",
+        "接入真实服务(如 OTel Demo)后,这里显示各路数据源的探活状态,Agent 的连接清单才会合并进真实数据源。",
+        "知识问答、变更流程、演示数据(mock 监控/日志)一切照常,Agent 主链路对它零感知——接入是可选增强,不是依赖。");
+      box.classList.add("wide");   // 单卡横跨整行,右侧不留突兀空白
+      const foot = el("div", "foot");
+      const add = el("button", "btn go", "接入服务 →");
+      add.addEventListener("click", () => { formState = { mode: "choose" }; loadTargets(); });
+      foot.appendChild(add);
+      box.appendChild(foot);
+      return box;
+    }
+
+    function renderTargets(cards) {
+      const box = $("targets");
+      box.textContent = "";
+      for (const c of cards) box.appendChild(c);
+    }
+
+    async function loadTargets(fresh) {
+      // 先画本地快照(没弹窗、非强制刷新时),网络回来再替换
+      if (!fresh && !formState) {
+        try {
+          const snap = JSON.parse(sessionStorage.getItem("adm_targets") || "null");
+          if (snap) renderTargets(snap.targets.map(targetCard));
+        } catch (e) { /* 快照画不了就等网络 */ }
+      }
+      try {
+        // 默认吃后端十几秒内的探活缓存(点了立刻出);fresh=true 才真的重探一遍。
+        // 弹窗开着时只重画列表,不碰弹窗
+        const d = await api("/api/targets" + (fresh ? "?fresh=1" : ""));
+        try { sessionStorage.setItem("adm_targets", JSON.stringify(d)); } catch (e) {}
+        const cards = d.targets.map(targetCard);
+        if (formState) {
+          if (formState.mode === "choose") openModal(deployChooser());
+          else if (formState.mode === "cluster") openModal(clusterCard(d.targets));
+          else openModal(formCard(formState.mode === "edit" ? formState.target : null,
+                                  formState.cluster));
+        } else {
+          closeModal();
+          if (!d.targets.length) cards.push(emptyCard());
+        }
+        renderTargets(cards);
+      } catch (e) {
+        const errCard = modCard("服务管理不可用", "error",
+          "取数失败:" + e.message + "。多半是改了代码还没重启服务,或后端没起。",
+          "这块只影响服务接入管理,Agent 本身照常运行。");
+        errCard.classList.add("wide");
+        renderTargets([errCard]);
+      }
+    }
+
+    /* ---------- API 设置(三组上游:对话/嵌入/重排;真测通过才保存,保存即热生效) ---------- */
+
+    const API_GROUPS = [
+      { key: "chat", title: "对话模型",
+        lede: "值班猫回答、意图识别、会话摘要都走这一组。换模型或通道保存后即刻生效,无迁移问题。" },
+      { key: "embed", title: "嵌入模型",
+        lede: "知识库向量化与向量检索用。换 base_url/模型后向量不能互转,保存会要求全量重嵌知识库。",
+        danger: true },
+      { key: "rerank", title: "检索模型",
+        lede: "混合检索的精排打分。无持久化状态,换模型保存后即刻生效。地址带不带 /v1 都收,少版本段自动补。" },
+    ];
+
+    function apiSettingCard(meta, cur, fp) {
+      const box = el("div", "mod");
+      const head = el("div", "head");
+      head.appendChild(el("h3", null, meta.title));
+      head.appendChild(el("span", "spacer"));
+      if (meta.key === "embed" && fp) {
+        const ok = fp.in_sync;
+        head.appendChild(el("span", "pill " + (ok ? "ok" : "attention"),
+                            ok ? "向量已配套" : "向量待重嵌"));
+      }
+      box.appendChild(head);
+      box.appendChild(el("p", "lede", meta.lede));
+
+      const form = el("div", "form");
+      const base = textInput("如 https://api.siliconflow.cn/v1", cur.base_url);
+      const model = textInput("如 BAAI/bge-m3", cur.model);
+      const key = textInput(
+        cur.api_key ? "已配置(" + cur.api_key + "),留空=不修改" : "必填,如 sk-...",
+        "");
+      form.appendChild(field("Base URL", base));
+      form.appendChild(field("模型名", model));
+      form.appendChild(field("API Key", key));
+      box.appendChild(form);
+
+      const foot = el("div", "foot");
+      const save = el("button", "btn go", "测试并保存");
+      save.addEventListener("click", async () => {
+        const group = { base_url: base.value.trim(), model: model.value.trim(),
+                        api_key: key.value.trim() };
+        if (!group.base_url || !group.model) { toast("Base URL 和模型名不能为空", true); return; }
+        save.disabled = true;
+        save.textContent = "真测中…";
+        try {
+          const d = await saveSettings({ [meta.key]: group });
+          if (d.rebuilding) {
+            toast(d.message, false);
+          } else {
+            toast("已保存并生效:" + (d.checks || []).join(";"), false);
+          }
+          loadSettings();
+        } catch (err) {
+          if (err.requires_rebuild) {
+            const msg = "嵌入配置变了,已有 " + err.requires_rebuild.chunks +
+                        " 块向量与新模型不通用。\n确认将 drop 向量集合并全量重嵌(" +
+                        err.requires_rebuild.chunks + " 块),期间向量检索不可用。继续?";
+            if (confirm(msg)) {
+              save.textContent = "重建中…";
+              try {
+                const d = await saveSettings({ [meta.key]: group, rebuild: true });
+                toast(d.message, false);
+                loadSettings();
+              } catch (e2) {
+                toast("重建启动失败:" + e2.message, true);
+                save.disabled = false;
+              }
+            } else {
+              save.disabled = false;
+              save.textContent = "测试并保存";
+            }
+            return;
+          }
+          toast("保存失败:" + err.message, true);
+          save.disabled = false;
+        }
+      });
+      foot.appendChild(save);
+      box.appendChild(foot);
+      return box;
+    }
+
+    /* settings 接口不走公共 api():409 的 detail 是结构化对象(重建确认信息),要原样拿到 */
+    async function saveSettings(body) {
+      const r = await fetch("/api/settings", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const e = new Error(typeof data.detail === "string" ? data.detail
+                            : (data.detail && data.detail.message) || ("HTTP " + r.status));
+        if (data.detail && data.detail.requires_rebuild) e.requires_rebuild = data.detail;
+        throw e;
+      }
+      return data;
+    }
+
+    async function loadSettings() {
+      const box = $("apiSettings");
+      await snapLoad("settings", "/api/settings",
+        (d) => {
+          box.textContent = "";
+          for (const meta of API_GROUPS) {
+            box.appendChild(apiSettingCard(meta, d.groups[meta.key], d.embed_fingerprint));
+          }
+        },
+        (e) => {
+          box.textContent = "";
+          const errCard = modCard("API 设置不可用", "error",
+            "取数失败:" + e.message + "。多半是改了代码还没重启,或数据库没起。",
+            "这块只影响上游配置管理,当前进程里的配置照常工作。");
+          errCard.classList.add("wide");
+          box.appendChild(errCard);
+        });
+    }
+
+    /* ---------- 数据保留:诊断存档/告警流水的清理策略(运维配置,默认不动数据) ---------- */
+    async function loadRetention() {
+      const box = $("retentionBox");
+      await snapLoad("retention", "/api/admin/retention",
+        (d) => {
+          box.textContent = "";
+          box.appendChild(retentionCard(d.policy, d.stats));
+        },
+        (e) => {
+          box.textContent = "";
+          const c = modCard("数据保留不可用", "error", "取数失败:" + e.message, null);
+          c.classList.add("wide");
+          box.appendChild(c);
+        });
+    }
+
+    function retentionCard(p, st) {
+      const runs = (st || {}).diagnosis_runs || {};
+      const card = el("div", "mod wide");
+      const head = el("div", "head");
+      head.appendChild(el("h3", null, "数据保留"));
+      head.appendChild(el("span", "spacer"));
+      head.appendChild(el("span", "pill " + (p.enabled ? "ok" : "missing"),
+        p.enabled ? "自动清理中" : "未开启"));
+      card.appendChild(head);
+      card.appendChild(el("p", "lede",
+        "诊断存档和告警流水只增不减,久了会拖慢诊断自己。体检:" +
+        "存档 " + (runs.total || 0) + " 条(最老 " +
+        (runs.oldest ? runs.oldest.slice(0, 10) : "无") + ")" +
+        " · 事故 " + ((st || {}).incidents || 0) + " 起 · 流水 " +
+        ((st || {}).intake_events || 0) + " 条。事故永不删。"));
+      const form = el("div", "form");
+      form.style.cssText = "margin-top:10px;display:grid;gap:7px";
+      const row = (labelText, node, hint) => {
+        const r = el("div", null, null);
+        r.style.cssText = "display:grid;grid-template-columns:11em 1fr;" +
+                          "align-items:center;gap:8px;font-size:12.5px";
+        const lab = el("span", null, labelText);
+        lab.style.cssText = "color:#6d6478";
+        r.appendChild(lab);
+        r.appendChild(node);
+        if (hint) r.appendChild(el("span", null, hint));
+        return r;
+      };
+      const chk = document.createElement("input");
+      chk.type = "checkbox"; chk.id = "retEnabled"; chk.checked = !!p.enabled;
+      chk.style.cssText = "width:17px;height:17px;margin:0";
+      const chkCell = el("label", null, null);
+      chkCell.style.cssText = "display:flex;align-items:center;gap:7px;cursor:pointer";
+      chkCell.appendChild(chk);
+      chkCell.appendChild(document.createTextNode("开启(每天自动删一次)"));
+      form.appendChild(row("自动清理", chkCell,
+        "不开启就什么都不删,只看上面的体检数字"));
+      const numCell = (id, val, unit) => {
+        const wrap = el("span", null, null);
+        wrap.style.cssText = "display:inline-flex;align-items:center;gap:6px";
+        const inp = document.createElement("input");
+        inp.type = "number"; inp.id = id; inp.value = val;
+        inp.min = 1; inp.max = 3650; inp.style.width = "84px";
+        wrap.appendChild(inp);
+        wrap.appendChild(document.createTextNode(unit));
+        return wrap;
+      };
+      form.appendChild(row("未见故障的存档", numCell("retClear", p.clear_days, "天后整行删除")));
+      form.appendChild(row("确诊的存档", numCell("retSlim", p.slim_days, "天后只留结论,删大字段")));
+      form.appendChild(row("告警流水", numCell("retIntake", p.intake_days, "天后删除")));
+      const status = el("div", null, " ");
+      status.style.cssText = "font-size:11.5px;color:#6d6478;margin-top:2px";
+      const btns = el("div", null, null);
+      btns.style.cssText = "display:flex;gap:8px;justify-content:flex-end;margin-top:2px";
+      const saveBtn = el("button", "btn sm go", "保存");
+      saveBtn.type = "button";
+      saveBtn.addEventListener("click", async () => {
+        try {
+          await api("/api/admin/retention", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              enabled: chk.checked,
+              clear_days: Number(document.getElementById("retClear").value),
+              slim_days: Number(document.getElementById("retSlim").value),
+              intake_days: Number(document.getElementById("retIntake").value),
+            }),
+          });
+          await loadRetention();
+        } catch (e) { status.textContent = "保存失败:" + e.message; }
+      });
+      const runBtn = el("button", "btn sm", "立即清理");
+      runBtn.type = "button";
+      runBtn.addEventListener("click", async () => {
+        try {
+          const r = await api("/api/admin/retention/run", { method: "POST" });
+          const parts = [];
+          if (r.cleared_runs != null) parts.push("删存档 " + r.cleared_runs + " 条");
+          if (r.slimmed_runs != null) parts.push("摘要化 " + r.slimmed_runs + " 条");
+          if (r.intake_events != null) parts.push("删流水 " + r.intake_events + " 条");
+          status.textContent = "清理完成:" + (parts.join(" · ") || "没有到期的");
+          await loadRetention();
+        } catch (e) { status.textContent = "执行失败:" + e.message; }
+      });
+      btns.appendChild(saveBtn);
+      btns.appendChild(runBtn);
+      form.appendChild(btns);
+      form.appendChild(status);
+      card.appendChild(form);
+      return card;
+    }
+
+    mountAdminNav("/admin");
+    // 弹窗:点遮罩空白处或按 Esc 关闭(点弹窗内部不关)
+    $("mask").addEventListener("click", (e) => { if (e.target.id === "mask") closeForm(); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && formState) closeForm();
+    });
+    $("refreshBtn").addEventListener("click", () => { load(); loadTargets(true); loadSettings(); loadRetention(); });
+    $("toolsDetailBtn").addEventListener("click", () => { location.href = "/tools"; });
+    $("addTargetBtn").addEventListener("click", () => { formState = { mode: "choose" }; loadTargets(); });
+    load();
+    loadTargets();
+    loadSettings();
+    loadRetention();
+  </script>
+</body>
+</html>

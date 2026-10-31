@@ -1,1 +1,252 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OpsPaw · 工具清单</title><link rel="stylesheet" href="/static/acceptance.css"></head><body><div class="wrap"><div class="topbar"><h1>工具清单</h1><a class="btn" href="/">返回对话</a><button class="btn" id="refresh">刷新</button></div><p id="status" role="status">正在发现可用工具…</p><div class="table-wrap"><table><thead><tr><th>工具</th><th>用途</th><th>来源</th><th>权限</th></tr></thead><tbody id="tools"></tbody></table></div></div><script src="/static/tools-page.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpsPaw · Agent 工具清单</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'><rect x='2' y='2' width='4' height='4' fill='%232b2632'/><rect x='10' y='2' width='4' height='4' fill='%232b2632'/><rect x='2' y='4' width='12' height='9' fill='%232b2632'/><rect x='3' y='3' width='2' height='3' fill='%23ff9f57'/><rect x='11' y='3' width='2' height='3' fill='%23ff9f57'/><rect x='3' y='5' width='10' height='7' fill='%23ff9f57'/><rect x='5' y='7' width='1' height='2' fill='%232b2632'/><rect x='10' y='7' width='1' height='2' fill='%232b2632'/><rect x='7' y='9' width='2' height='1' fill='%23ff8095'/></svg>" />
+  <style>
+    :root {
+      --ink: #2b2632;
+      --fur: #ff9f57;
+      --coral: #ff7a59;
+      --cream: #fff6e6;
+      --paper: #fffaf0;
+      --muted: #9b8f86;
+      --error: #d6455a;
+      --online: #5fcf6a;
+      --shadow: 4px 4px 0 var(--ink);
+      --shadow-sm: 3px 3px 0 var(--ink);
+      --shadow-lg: 8px 8px 0 var(--ink);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas,
+        "PingFang SC", "Microsoft YaHei", monospace;
+      color: var(--ink);
+      background-color: #f7d9a8;
+      background-image:
+        linear-gradient(rgba(43,38,50,0.05) 2px, transparent 2px),
+        linear-gradient(90deg, rgba(43,38,50,0.05) 2px, transparent 2px);
+      background-size: 24px 24px;
+      padding: 24px 16px 64px;
+    }
+    .wrap { max-width: 1080px; margin: 0 auto; }
+
+    .topbar {
+      background: var(--cream); border: 4px solid var(--ink); box-shadow: var(--shadow-lg);
+      padding: 14px 18px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+    .topbar h1 { font-size: 18px; margin: 0; letter-spacing: 1px; }
+    .topbar .sub { color: var(--muted); font-size: 12px; }
+    .spacer { flex: 1; }
+    .btn {
+      font: inherit; cursor: pointer; border: 3px solid var(--ink); background: var(--paper);
+      padding: 6px 14px; box-shadow: var(--shadow-sm); font-weight: 700;
+      text-decoration: none; color: var(--ink);
+    }
+    .btn:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 var(--ink); }
+
+    .stats { margin-top: 16px; display: flex; gap: 14px; flex-wrap: wrap; }
+    .stat {
+      background: var(--paper); border: 3px solid var(--ink); box-shadow: var(--shadow-sm);
+      padding: 10px 16px; font-size: 13px;
+    }
+    .stat b { font-size: 20px; display: block; }
+
+    /* 工具清单:Excel 式整宽面板(与后台首页同一套观感)——左列名字+标签,中列"什么时候用",
+       右列参数。一行一个工具,横向扫读比一格格卡片快。 */
+    .panel { margin-top: 16px; background: var(--cream); border: 4px solid var(--ink); box-shadow: var(--shadow); }
+    /* 每个 agent 一段:段头写清它是谁、边界在哪,下面才是它的工具 */
+    .panel .panel-head {
+      display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+      padding: 10px 14px; background: var(--paper); border-bottom: 2px solid var(--ink);
+    }
+    .panel .panel-head h2 { font-size: 14px; margin: 0; letter-spacing: 1px; }
+    .panel .panel-head .tag {
+      font-size: 11px; font-weight: 700; border: 2px solid var(--ink);
+      padding: 1px 8px; background: var(--cream); white-space: nowrap;
+    }
+    .panel .panel-head .gl { font-size: 12px; color: var(--muted); }
+    .panel .panel-head .count { margin-left: auto; font-size: 12px; color: var(--muted); }
+    .panel .thead, .panel .trow {
+      display: grid; grid-template-columns: 16em 1fr 15em;
+      border-top: 2px dashed rgba(43,38,50,.25);
+    }
+    .panel .thead { background: var(--paper); border-top: none; }
+    .panel .thead div {
+      font-size: 12px; font-weight: 700; color: var(--muted);
+      padding: 8px 14px; border-right: 2px solid rgba(43,38,50,.5); letter-spacing: 1px;
+    }
+    .panel .thead div:last-child, .panel .trow > div:last-child { border-right: none; }
+    .panel .trow > div {
+      padding: 10px 14px; font-size: 12.5px; line-height: 1.75;
+      border-right: 2px solid rgba(43,38,50,.18); min-width: 0;
+    }
+    .panel .tname { font-weight: 700; word-break: break-all; display: flex; flex-direction: column; gap: 6px; }
+    .panel .pills { display: flex; gap: 6px; flex-wrap: wrap; }
+    .pill {
+      font-size: 11px; font-weight: 700; border: 2px solid var(--ink);
+      padding: 1px 8px; background: var(--paper); white-space: nowrap;
+    }
+    .pill.mcp { background: var(--fur); }
+    .pill.write { background: #ff8095; }
+    .panel .tparams { font-size: 11.5px; color: #6d6478; }
+    .panel .tparam { padding: 3px 0; border-top: 1px dashed rgba(43,38,50,.2); }
+    .panel .tparam:first-child { border-top: none; }
+    .panel .tparam b { color: var(--ink); }
+    .panel .req { color: var(--coral); font-weight: 700; }
+    @media (max-width: 820px) {
+      .panel .thead { display: none; }
+      .panel .trow { grid-template-columns: 1fr; }
+      .panel .trow > div { border-right: none; border-top: 1px dashed rgba(43,38,50,.2); }
+      .panel .trow > div:first-child { border-top: none; }
+    }
+
+    .err {
+      margin-top: 16px; background: var(--paper); border: 3px solid var(--error);
+      box-shadow: var(--shadow); padding: 16px 18px; font-size: 13px;
+    }
+    .hint { margin-top: 14px; font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <h1>Agent 工具清单</h1>
+      <span class="sub" id="sub">现拉 registry(内置 ∪ MCP),与执行引擎同源——这里列的就是模型真正看得见的工具</span>
+      <span class="spacer"></span>
+      <a class="btn" href="/admin">← 返回后台</a>
+      <button class="btn" id="refresh">刷新</button>
+    </div>
+    <div class="stats" id="stats" style="display:none"></div>
+    <div id="grid"><div class="err">加载中…</div></div>
+    <p class="hint">description 是写给模型看的「什么时候用」;MCP server 离线时它的工具如实缺席,不凑数。写操作唯一入口 create_ticket 走 interrupt 确认流。</p>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    async function api(path) {
+      const r = await fetch(path);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }
+    function el(tag, cls, text) {
+      const n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (text !== undefined) n.textContent = text;
+      return n;
+    }
+    function toolRow(t) {
+      const row = el("div", "trow");
+      const name = el("div", "tname");
+      name.appendChild(el("span", null, t.name));
+      const pills = el("div", "pills");
+      pills.appendChild(el("span", "pill " + (t.source === "mcp" ? "mcp" : ""),
+        t.source === "mcp" ? "MCP · " + (t.mcp_server || "?") : "内置"));
+      pills.appendChild(el("span", "pill " + (t.permission === "write" ? "write" : ""),
+        t.permission === "write" ? "写·确认流" : "读"));
+      name.appendChild(pills);
+      row.appendChild(name);
+      row.appendChild(el("div", "tdesc", (t.description || "(无描述)").replace(/\s+/g, " ")));
+
+      const ps = el("div", "tparams");
+      const params = t.params || [];
+      if (!params.length) {
+        ps.appendChild(el("div", "tparam", "无模型可见参数"));
+      } else {
+        for (const p of params) {
+          const line = el("div", "tparam");
+          line.appendChild(el("b", null, p.name));
+          line.appendChild(document.createTextNode(" " + (p.type || "")));
+          if (p.required) line.appendChild(el("span", "req", " 必填"));
+          line.appendChild(document.createTextNode(" — " + (p.description || "")));
+          ps.appendChild(line);
+        }
+      }
+      row.appendChild(ps);
+      return row;
+    }
+    /* 工具按 agent 分组展示:一段一个 agent,组内才是它真正能用的工具。
+       分组是"这个工具归谁用"的产品口径,工具本身仍然现拉注册表,这里只做归类。 */
+    const AGENT_GROUPS = [
+      {
+        title: "问答 agent", tag: "有据可查",
+        lede: "日常问答、查服务现状、指路;写操作只有建工单一个入口,且要你确认。",
+        tools: ["query_catalog", "query_service", "query_platform_metrics",
+                "query_platform_traces", "query_platform_logs", "query_faq",
+                "submit_change", "create_ticket"],
+      },
+      {
+        title: "归因 agent", tag: "只看不摸",
+        lede: "扫平台找异常服务,拉指标/链路/日志/拓扑定位根因,产出诊断卡;不改任何东西。",
+        tools: ["start_diagnosis"],
+      },
+      {
+        title: "修复 agent", tag: "白名单动作",
+        lede: "复核现场 → 决策动作 → 执行 → 再验证 → 写回执;只在接了连接器的那台机器上动手。",
+        tools: ["repair_capabilities", "repair_read", "start_repair"],
+      },
+    ];
+
+    function groupPanel(title, tag, lede, tools) {
+      const panel = el("div", "panel");
+      const head = el("div", "panel-head");
+      head.appendChild(el("h2", null, title));
+      if (tag) head.appendChild(el("span", "tag", tag));
+      if (lede) head.appendChild(el("span", "gl", lede));
+      head.appendChild(el("span", "count", tools.length + " 个工具"));
+      panel.appendChild(head);
+      const thead = el("div", "thead");
+      thead.appendChild(el("div", null, "工具"));
+      thead.appendChild(el("div", null, "说明(什么时候用)"));
+      thead.appendChild(el("div", null, "参数"));
+      panel.appendChild(thead);
+      for (const t of tools) panel.appendChild(toolRow(t));
+      return panel;
+    }
+
+    async function load() {
+      const grid = $("grid"), stats = $("stats");
+      try {
+        const d = await api("/api/tools");
+        const ts = d.tools || [];
+        const byName = new Map(ts.map((t) => [t.name, t]));
+        const used = new Set();
+        grid.textContent = "";
+        for (const g of AGENT_GROUPS) {
+          const mine = g.tools.map((n) => byName.get(n)).filter(Boolean);
+          mine.forEach((t) => used.add(t.name));
+          grid.appendChild(groupPanel(g.title, g.tag, g.lede, mine));
+        }
+        // 注册表里多出来的(如 MCP 现拉的工具)不能藏起来:单列一段如实展示
+        const rest = ts.filter((t) => !used.has(t.name));
+        if (rest.length) {
+          grid.appendChild(groupPanel("其他工具", "未归类",
+            "注册表里有、但还没归到上面三个 agent 的工具(MCP 现拉的会落在这里)。", rest));
+        }
+        const nMcp = ts.filter(t => t.source === "mcp").length;
+        const nWrite = ts.filter(t => t.permission === "write").length;
+        stats.style.display = "";
+        stats.textContent = "";
+        for (const [label, v] of [["工具总数", ts.length], ["内置", ts.length - nMcp],
+                                  ["MCP", nMcp], ["写操作", nWrite]]) {
+          const s = el("div", "stat");
+          s.appendChild(el("b", null, String(v)));
+          s.appendChild(document.createTextNode(label));
+          stats.appendChild(s);
+        }
+        $("sub").textContent = "现拉 registry(内置 ∪ MCP),与执行引擎同源——刷新时间 " +
+          new Date().toLocaleTimeString("zh-CN");
+      } catch (e) {
+        grid.textContent = "";
+        const err = el("div", "err", "取数失败:" + e.message + "(服务没起或刚改完代码没重启)");
+        grid.appendChild(err);
+      }
+    }
+    $("refresh").addEventListener("click", load);
+    load();
+  </script>
+</body>
+</html>

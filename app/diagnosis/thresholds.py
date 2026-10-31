@@ -59,7 +59,9 @@ REGISTRY: dict[str, dict] = {
         "source": "清洗基线的离群点界限:偏离中位数超过 k×MAD 的窗口判为故障期,"
                   "不进基线。取 6 是统计惯例(MAD≈0.6745σ,6×MAD≈4σ,正常数据"
                   "几乎不会被误剔);不剔的话 p99 会落在故障水平上——2026-10-23 实测"
-                  "2% 未登记故障窗就把 frontend 的边界撑到 15000ms / 28% 错误率",
+                  "2% 未登记故障窗就把 frontend 的边界撑到 15000ms / 28% 错误率。"
+                  "清洗的**总量**上限见 stats.CONTAMINATION_MAX(直接取 FALSE_ALARM_PER_TEST,"
+                  "不是新拍的数:超过 α 的偏离是这类指标本来的样子,不是故障留下的痕迹)",
     },
 
     # ---------- deviation.py:四维偏离 ----------
@@ -85,6 +87,13 @@ REGISTRY: dict[str, dict] = {
     "RANGE_TIMEOUT": {"category": "C", "unit": "秒",
                       "source": "实测:24h histogram_quantile 需 41s(靶机 2 核),取一倍余量"},
     "SCAN_WINDOW_S": {"category": "C", "unit": "秒", "source": "策略:粗筛当前窗长度"},
+    "RECENT_WINDOWS": {
+        "category": "C", "unit": "窗数",
+        "source": "策略:判'这次新出的变化'时用的近期尺度(12 窗 = 1 小时,不含当前窗)。"
+                  "为什么是它:诊断窗与 settle 各 5 分钟,单个窗的抖动压不住 12 个窗的典型"
+                  "水平;而 1 小时又短到能反映'今天这会儿平台是什么样'。判据公式与长期"
+                  "基线完全同源,只换时间尺度,不引入新判据",
+    },
     "HISTORY_HOURS": {"category": "C", "unit": "小时",
                       "source": "策略:历史窗长度(与 HISTORY_STEP_S 共同决定样本量)"},
     "HISTORY_STEP_S": {"category": "C", "unit": "秒",

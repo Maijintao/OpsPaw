@@ -20,7 +20,7 @@ async def test_forced_rag_builds_evidence(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_forced_rag_zero_hit_still_empty_evidence(monkeypatch, db_session_factory):
+async def test_forced_rag_zero_hit_still_empty_evidence(monkeypatch):
     # 拒答闸已下线:零命中不再走 fallback 分支,证据为空照常进 Agent
     monkeypatch.setattr(nodes.query_understanding, "understand",
                         _aval({"standard": "注销账号", "expanded": []}))

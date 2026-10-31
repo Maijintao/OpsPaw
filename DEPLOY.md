@@ -1,84 +1,81 @@
 # OpsPaw 运行与部署
 
-本文说明当前分支的本地运行、RAG 知识库构建和可选服务配置。应用需要 Python 3.12 及以上、uv，以及可访问的 MySQL、Milvus 和模型上游。
+开发时直接运行应用，连接已有 MySQL、Milvus 和观测服务。以下命令在项目根目录执行，不创建或启动容器。
 
 ## 安装与配置
 
+需要 Python 3.12 及以上和 uv：
+
 ```bash
 uv sync --locked
+```
+
+首次运行且没有 `.env` 时复制模板，已有配置不要覆盖：
+
+```bash
 cp .env.example .env
 ```
 
-至少填写以下配置，真实凭据不要提交到仓库：
+| 配置 | 说明 |
+| --- | --- |
+| `CHAT_BASE_URL`、`CHAT_MODEL`、`CHAT_API_KEY` | 支持工具调用的聊天模型 |
+| `EMBED_BASE_URL`、`EMBED_MODEL`、`EMBED_API_KEY` | 嵌入服务 |
+| `RERANK_BASE_URL`、`RERANK_MODEL`、`RERANK_API_KEY` | 支持项目 `/rerank` 接口的重排服务 |
+| `DATABASE_URL` | MySQL 业务库异步连接地址 |
+| `TEST_DATABASE_URL` | 独立测试库，仅数据库测试需要 |
+| `MILVUS_URI` | Milvus Standalone 地址 |
+| `ACCESS_USER`、`ACCESS_PASS` | 对外访问账号和密码 |
 
-- `CHAT_BASE_URL`、`CHAT_MODEL`、`CHAT_API_KEY`
-- `EMBED_BASE_URL`、`EMBED_MODEL`、`EMBED_API_KEY`
-- `RERANK_BASE_URL`、`RERANK_MODEL`、`RERANK_API_KEY`
-- `DATABASE_URL`
-- `MILVUS_URI`
-- `CHECKPOINTER_DB_PATH`
-
-根据部署情况继续配置 MCP、Grafana、修复连接器和可选的 Langfuse。
+可选 Langfuse 配置为 `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`、`LANGFUSE_BASE_URL`。真实凭据只放在部署环境中。
 
 ## 数据库与知识库
 
-应用启动时会按当前 ORM 模型创建缺失的数据表。`sql/ch02-ddl.sql`、`sql/ch03-ddl.sql`、`sql/ch03-staging-review.sql`、`sql/ch04-ddl.sql` 和 `sql/ch09-ddl.sql` 可作为建表及升级参考；这些脚本包含 `CREATE TABLE`，不要在已有表上盲目重复执行。
+在现有 MySQL 服务创建业务库和用户。基础表按顺序应用下列 SQL，已有库只执行尚未应用的升级：
 
-知识库材料位于 `data/kb/`。首次构建：
+1. `sql/ch02-ddl.sql`
+2. `sql/ch03-ddl.sql`
+3. `sql/ch03-staging-review.sql`
+4. `sql/ch04-ddl.sql`
+5. `sql/ch07-ddl.sql`
+6. `sql/ch08-ddl.sql`
+7. `sql/ch09-ddl.sql`
+8. `sql/ch10-ddl.sql`
+
+平台、诊断、修复和事故等扩展表还由应用启动过程创建。已有表的字段升级需结合 `sql/` 的对应脚本核对，不要清空业务数据。
 
 ```bash
 make kb-build
 make kb-vectorize
 ```
 
-切换 Milvus 实例后可执行 `make kb-vectorize-all` 重新写入全部已有知识块。修改 Markdown 材料后可执行 `make kb-repatch`，只重嵌发生变化的块。
+已有知识块、只需更换向量库时，使用 `make kb-vectorize-all` 重新向量化。
 
 ## 启动
-
-```bash
-make dev
-```
-
-等价的直接命令：
 
 ```bash
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-主要页面：
+访问 `http://127.0.0.1:8000` 和 `/admin`。需要演示工具时，分别运行：
 
-- `/`：值班对话
-- `/kb`：知识库录入、切块预览、向量化和检索测试
-- `/review`：待审知识队列
-- `/rag-eval`：RAG 评估结果与忠实度个案
-- `/observability`：成本、评估趋势和置信度校准
-- `/platforms`：数据源与监控
-- `/diagnosis`：诊断证据
-- `/repair/{id}`：修复回执
-- `/alerts`：告警与巡检
-- `/incidents`：事故中心
-- `/admin`：配置、后台作业和保留策略
-- `/topics`：主题分类
+```bash
+uv run python mcp_servers/monitor_server.py
+uv run python mcp_servers/log_server.py
+```
 
-## 可选服务
+真实调查需要在管理界面接入平台的 Prometheus、Jaeger，以及可选的 Loki、Grafana。
 
-- 演示 MCP：`bash scripts/start_mcp.sh`。脚本运行期间保持前台，退出时会清理子进程。
-- Langfuse：配置 `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`、`LANGFUSE_BASE_URL` 后生成 token 用量报告。
-- 主题分类器：准备模型和 tokenizer 后按 `scripts/ch10/README.md` 启动。
-- 修复连接器：从平台接入页生成一次性安装命令；写操作受计划、审批和审计流程约束。
+## 同步到已有服务器
+
+```bash
+./scripts/sync_server.sh
+./scripts/sync_server.sh --restart
+```
+
+第一条同步源码，第二条额外重启已配置的 `opspaw-server`。执行前核对脚本中的主机、密钥和部署目录是否适用于当前环境。服务器的 `.env`、数据库和运行数据单独管理。
 
 ## 检查
 
-```bash
-make test
-make validate-rag
-```
+打开首页和管理页，检查数据源状态；录入运维文档并检索。诊断结果应与所选平台和调查时间对应，并显示数据质量和结论依据。修复按页面确认与授权流程执行。
 
-完整的四策略 RAG 评估需要可用的 Milvus、已向量化知识库、嵌入、重排和聊天上游：
-
-```bash
-make eval-rag
-make calibrate-confidence
-```
-
-评估和诊断回放只代表给定样例上的结果，不等同于生产环境准确率。
+产品要求见 [docs/product-acceptance.md](docs/product-acceptance.md)。

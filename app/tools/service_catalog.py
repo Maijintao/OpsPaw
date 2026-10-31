@@ -43,7 +43,6 @@ def _client() -> httpx.AsyncClient:
     return net.client(UPSTREAM_TIMEOUT)
 
 
-
 async def _enabled_targets() -> list:
     rows = await repository.list_targets()
     return [r for r in rows if r.enabled]

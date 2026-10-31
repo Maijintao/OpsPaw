@@ -406,15 +406,6 @@ async def get_repair_agent_run(repair_id: str) -> dict:
             "code": "not_found"}
 
 
-@router.post("/api/repair/runs/{repair_id}/stop")
-async def stop_repair_agent_run(repair_id: str) -> dict:
-    """只停止现场只读调查；写操作开始后保留验证流程，避免结果不明。"""
-    from app.repair import agent as repair_agent
-    if not repair_agent.stop(repair_id):
-        raise HTTPException(409, "当前阶段不能安全停止；写操作开始后需等待结果检查完成")
-    return {"ok": True, "repair_id": repair_id, "status": "stopping"}
-
-
 @router.get("/api/repair/runs/by-diagnosis/{diag_id}")
 async def latest_repair_for_diagnosis(diag_id: str) -> dict:
     """某诊断单最近一次修复任务(聊天卡片回放:刷新页面后修复卡靠它恢复)。"""

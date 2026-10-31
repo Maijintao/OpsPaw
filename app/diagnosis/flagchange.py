@@ -98,4 +98,20 @@ async def detect(prom: dict, window_start: float, window_end: float,
         incidents = await _detect._incident_windows(now)
     except Exception:  # noqa: BLE001
         incidents = []
-    return _parse(rows, window_start, window_end, incidents), None
+    changes = _parse(rows, window_start, window_end, incidents)
+    if changes:
+        return changes, None
+    # 以前这里返回 ([], None):查到了遥测、但一条变更都没解析出来,却不说明原因,
+    # 从外面看就是"这个通道不存在"。2026-10-26 排查发现两个常见原因:
+    #   ① 命中的指标族没有 feature_flag_result_variant 标签(本靶机的
+    #      feature_flag_evaluation_requests_total / active_count 都没有,
+    #      只有 success_total 有);
+    #   ② 同款开关历史上翻过,取值已在基线里(跑批每天翻一次就会这样)。
+    _with_variant = sum(1 for s in rows
+                        if (s.get("metric") or {}).get(FLAG_VARIANT_LABEL) is not None)
+    if not _with_variant:
+        return [], ("命中了开关求值遥测,但没有任何序列带 "
+                    f"{FLAG_VARIANT_LABEL} 标签——这个环境的指标族报不出取值,"
+                    "无法判断开关翻没翻")
+    return [], (f"有 {_with_variant} 条带取值的开关序列,但当前窗内没有基线里没见过的新取值"
+                "(同款开关历史上翻过,取值已进基线)")

@@ -1,12 +1,12 @@
 SYSTEM_PROMPT_QUERY="""
 ## Role: Intent Interpreter.
 ## Goal: Interpret the query sentence into time_window and tasks.
-## Constraints:
+## Constraints: 
 - You have to generate the time_window, tasks and failure number in the specified format.
 - Always output the tasks in the fixed order ['AD', 'FT', 'RCL'], regardless of their mention order in the input.
-## Instructions:
+## Instructions: 
 - Try to understand the intent in the query sentence, and interpret it into time_window, tasks and failure number in the specified format.
-- Tasks should be in this list ['AD', 'FT', 'RCL'], where 'AD' aims to identify the root cause occurence datetime, 'FT' aims to identify the root cause reason, 'RCL' aims to identify the root cause component.
+- Tasks should be in this list ['AD', 'FT', 'RCL'], where 'AD' aims to identify the root cause occurence datetime, 'FT' aims to identify the root cause reason, 'RCL' aims to identify the root cause component. 
 - These three tasks can be arbitrarily combined, but they should always be in the order in this list ['AD', 'FT', 'RCL'].
 - Wrap time_window in the special tokens <time_window> and </time_window>.
 - Wrap tasks in the special tokens <tasks> and </tasks>.
@@ -28,23 +28,23 @@ SYSTEM_PROMPT_QUERY="""
 SYSTEM_PROMPT_RESULT="""
 ## Role: Answer Interpreter.
 ## Goal: Interpret the result sentence into answers.
-## Constraints:
+## Constraints: 
 - You have to generate the answers in the specified format.
-## Instructions:
+## Instructions: 
 - Try to understand the answers in the result sentence, and interpret it into answers in the specified format.
 - Answers are related to task in this list ['AD', 'FT', 'RCL'].
-  - 'AD' aims to identify the root cause occurence datetime.
-  - 'FT' aims to identify the root cause reason.
-  - 'RCL' aims to identify the root cause component.
+  - 'AD' aims to identify the root cause occurence datetime. 
+  - 'FT' aims to identify the root cause reason. 
+  - 'RCL' aims to identify the root cause component. 
 - Maintain the order of ['AD', 'FT', 'RCL'] for each prediction.
 - Concatenate multiple predictions in their original sequence (1st, 2nd, ...) into a single flat list.
 - If any task has no corresponding answer in the input, skip that field entirely, do not insert empty strings or placeholders.
 ## Example:
 - Input: The only predicted root cause component is Redis02\nThe only predicted root cause reason is high memory usage
-- Output: <answer>["high memory usage","Redis02"]</answer>
+- Output: <answer>["high memory usage","Redis02"]</answer> 
 
-- Input: The only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2021-03-06 14:46:00     The only predicted root cause component is Tomcat03
-- Output: <answer>["2021-03-06 14:46:00", "Tomcat03"]</answer>
+- Input: The only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2021-03-06 14:46:00     The only predicted root cause component is Tomcat03   
+- Output: <answer>["2021-03-06 14:46:00", "Tomcat03"]</answer> 
 
 - Input:The 1-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2021-03-10 22:03:00\n The 1-th predicted root cause component is IG02\n The 1-th predicted root cause reason is high disk I/O read usage\n The 2-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2021-03-10 22:19:00\n The 2-th predicted root cause component is MG02\n The 2-th predicted root cause reason is high disk I/O read usage
 -Output: <answer>["2021-03-10 22:03:00", "high disk I/O read usage", "IG02", "2021-03-10 22:19:00", "high disk I/O read usage", "MG02"]</answer>

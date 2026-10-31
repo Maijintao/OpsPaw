@@ -1,0 +1,128 @@
+{"text": "user-service 的 CPU 飙高,顺便告诉我这服务是谁负责的", "labels": ["CPU 异常", "服务信息"]}
+{"text": "data-sync-service CPU 高,它依赖哪些服务啊,会不会拖垮下游?", "labels": ["CPU 异常", "服务信息"]}
+{"text": "notification-service 的 CPU 曲线怎么突然翘起来了,有点慌", "labels": ["CPU 异常"]}
+{"text": "api-gateway-service 那个服务又趴窝了,CPU 一直顶在 100% 咋整", "labels": ["CPU 异常"]}
+{"text": "那个服务又趴窝了咋整,顺便看下它 CPU 是不是也飙了", "labels": ["其他", "CPU 异常"]}
+{"text": "search-service CPU 飙高,是不是刚发完版引起的?", "labels": ["CPU 异常", "发布相关"]}
+{"text": "order-service 的 CPU 使用率突然飙到 95% 了,这是咋回事?", "labels": ["CPU 异常"]}
+{"text": "api-gateway-service CPU 飙高,现在值班的是谁,多久要响应?", "labels": ["CPU 异常", "值班制度"]}
+{"text": "cart-service 负载好高啊,CPU 也快满了,能帮我重启一下吗", "labels": ["CPU 异常", "变更申请"]}
+{"text": "api-gateway-service 处理器打满了,是不是有慢 SQL 拖累的?", "labels": ["CPU 异常", "数据库存储"]}
+{"text": "payment-service 处理器打满,是不是网络那边有问题导致的?", "labels": ["CPU 异常", "网络问题"]}
+{"text": "交接班的时候要交代哪些东西,有没有模板?", "labels": ["值班制度"]}
+{"text": "这个故障我搞不定，升级机制是找谁，一线升二线怎么走？", "labels": ["值班制度"]}
+{"text": "告井响了之后一般要求多久内响应?", "labels": ["值班制度"]}
+{"text": "节假日值班怎么安排,有加班补贴吗?", "labels": ["值班制度"]}
+{"text": "交接班的时候如果上个班的问题还没闭环，责任算谁的？", "labels": ["值班制度"]}
+{"text": "这问题超出我范围了,升级给谁比较合适", "labels": ["其他", "值班制度"]}
+{"text": "连接池参数调大点行不行?现在这个配置是谁定的,值班制度里有没有说这种改动要谁审批", "labels": ["数据库存储", "值班制度"]}
+{"text": "值班猫你好,今天天气不错,你心情好吗?", "labels": ["其他"]}
+{"text": "算了,这个我自己再琢磨琢磨,先不麻烦你了,谢谢值班猫", "labels": ["其他"]}
+{"text": "刚才那个问题解决了,谢谢啊,没别的事了。", "labels": ["其他"]}
+{"text": "没事,就是随便问问,你们这个助手是自研的还是买的?", "labels": ["其他"]}
+{"text": "我啥都不太懂,先随便问问,值班猫能聊天吗?", "labels": ["其他"]}
+{"text": "payment-service 频繁 full GC,内存曲线在哪看啊?", "labels": ["内存异常", "监控观测"]}
+{"text": "api-gateway-service 刚发完版内存就飙了,是不是发布引起的?", "labels": ["内存异常", "发布相关"]}
+{"text": "cart-service 那个内存又爆了,老毛病了,咋处理啊", "labels": ["内存异常"]}
+{"text": "search-service OOM 了,实例被 kill 了,日志在哪查?", "labels": ["内存异常", "日志排查"]}
+{"text": "search-service 内存异常,顺便问下值班多久要响应?", "labels": ["内存异常", "值班制度"]}
+{"text": "data-sync-service 频繁 full GC,内存爆了,有啥处置办法?", "labels": ["内存异常"]}
+{"text": "order-service 内存异常,顺便问下值班几点交接班?", "labels": ["内存异常", "值班制度"]}
+{"text": "发布完 data-sync-service 内存就爆了，是不是新版本有内存泄漏？", "labels": ["发布相关", "内存异常"]}
+{"text": "cart-service 内存一直不释放,是不是有内存泄漏,该找谁处理?", "labels": ["内存异常"]}
+{"text": "notification-service 内存泄漏了,这个要不要发个故障通告到值班群?", "labels": ["内存异常", "通知公告"]}
+{"text": "user-service 堆内存一直涨,感觉有内存泄漏,要不要重启一下服务?", "labels": ["内存异常", "变更申请"]}
+{"text": "payment-service 这次发版能不能只发一半实例，剩下的观察下？", "labels": ["发布相关"]}
+{"text": "刚发完版就收到一堆告井，是不是发布把服务搞挂了？", "labels": ["发布相关"]}
+{"text": "灰度发不出去，报了个镜像拉取失败，这算发布问题还是网络问题？", "labels": ["发布相关"]}
+{"text": "刚发完版就一堆告井,是不是发布搞的鬼", "labels": ["其他", "发布相关"]}
+{"text": "刚发完版就告井了，是不是这次发布的问题？", "labels": ["发布相关"]}
+{"text": "变更审批一般要几级?普通扩容和紧急回滚流程一样吗?", "labels": ["变更申请"]}
+{"text": "刚发的版本有问题,想回滚到上一个版本,回滚流程是啥?", "labels": ["变更申请"]}
+{"text": "发布窗口是几点，另外变更怎么审批啊？", "labels": ["发布相关", "变更申请"]}
+{"text": "发布引起的问题，回滚版本要走什么流程？", "labels": ["发布相关", "变更申请"]}
+{"text": "变更窗口一般是几点到几点?我想给 api-gateway-service 做个扩容,得赶在窗口里吧?", "labels": ["变更申请"]}
+{"text": "order-service 想重启一下,变更单怎么提、走什么审批流程?", "labels": ["变更申请"]}
+{"text": "OpsPaw 你能帮我重启下 order-service 吗?", "labels": ["其他", "变更申请"]}
+{"text": "建单怎么建?顺便问下变更窗口几点", "labels": ["工具使用", "变更申请"]}
+{"text": "接口 P99 超时告警的阈值是几秒?想确认下这个触发条件。", "labels": ["告警阈值"]}
+{"text": "告警阈值设多少比较合理,有没有推荐的默认值参考?", "labels": ["告警阈值"]}
+{"text": "cart-service 连接池耗尽的告警阈值是多少,顺便问下慢 SQL 怎么排查?", "labels": ["告警阈值", "数据库存储"]}
+{"text": "api-gateway-service 磁盘使用率超过 85% 会告警吗,阈值是多少?", "labels": ["磁盘异常", "告警阈值"]}
+{"text": "接口 P99 超标的告警阈值是几秒?这个线是全局统一的还是每个服务不一样?", "labels": ["告警阈值"]}
+{"text": "api-gateway-service 接口 P99 超过多少毫秒会告警,顺便问下这个告警阈值能不能调?", "labels": ["告警阈值"]}
+{"text": "什么级别会告警?warning 和 critical 的阈值分别怎么定的?", "labels": ["告警阈值"]}
+{"text": "api-gateway-service 的 QPS 突降告警阈值怎么设的?跌多少百分比会触发", "labels": ["告警阈值"]}
+{"text": "通知公告模板在哪找,顺便问下告警阈值是多少", "labels": ["通知公告", "告警阈值"]}
+{"text": "告井一直响,我想重启服务压一压,这个变更怎么申请?", "labels": ["变更申请", "告警阈值"]}
+{"text": "内存告警线是多少?我们服务最近老是贴着线跑。", "labels": ["告警阈值"]}
+{"text": "cart-service 的告警阈值文档在哪,我查日志的时候想对照下触发条件。", "labels": ["告警阈值", "日志排查"]}
+{"text": "我想查监控里 order-service 的 GC 次数曲线,另外内存告警线是多少来着?", "labels": ["监控观测", "告警阈值"]}
+{"text": "发布完之后接口好慢，P99 直接超了，是发布引起的吗？", "labels": ["发布相关", "响应缓慢"]}
+{"text": "payment-service 响应超时变多了,顺便帮我看看它的 CPU 曲线是不是也飙了?", "labels": ["响应缓慢", "监控观测"]}
+{"text": "user-service 接口好慢，刚发完版就这样，是不是发布引起的？", "labels": ["响应缓慢", "发布相关"]}
+{"text": "search-service 搜索好慢，P99 直接飙到两秒了，正常吗？", "labels": ["响应缓慢"]}
+{"text": "search-service 接口响应时间涨得厉害,我想先查下日志,日志主题在哪来着?", "labels": ["响应缓慢", "日志排查"]}
+{"text": "user-service 的 P99 告井了,接口慢得不行,快帮我瞅瞅", "labels": ["响应缓慢"]}
+{"text": "notification-service 接口变卡了，响应缓慢，顺便问下扩容要走什么审批？", "labels": ["响应缓慢", "变更申请"]}
+{"text": "data-sync-service 的接口好慢，P99 超了，值班猫你能帮我看看不？", "labels": ["响应缓慢", "工具使用"]}
+{"text": "order-service 好慢啊,你能帮我查下监控吗,值班猫能干些啥?", "labels": ["响应缓慢", "工具使用"]}
+{"text": "api-gateway-service 变卡了,好多请求都超时,帮我瞅瞅", "labels": ["响应缓慢"]}
+{"text": "payment-service 超时好多，P99 超标了，这算不算要发故障通告？", "labels": ["响应缓慢", "通知公告"]}
+{"text": "我想建个单,值班猫这边建单流程是咋走的?", "labels": ["工具使用"]}
+{"text": "建单怎么建?工单系统入口在哪", "labels": ["工具使用"]}
+{"text": "连接池耗尽了,你能帮我重启下服务吗,值班猫有这个能力不?", "labels": ["数据库存储", "工具使用"]}
+{"text": "order-service 的慢 SQL 又冒出来了,数据库这块儿一般咋排查啊?", "labels": ["数据库存储"]}
+{"text": "数据库连接数突然飙到上限,是不是有连接泄漏,怎么定位是哪个服务?", "labels": ["数据库存储"]}
+{"text": "data-sync-service 的 MQ 消费积压得厉害,消息堆了几十万条,是不是 broker 出问题了?", "labels": ["数据库存储"]}
+{"text": "告井里跳出来的日志链接打不开,怎么手动查日志?", "labels": ["日志排查"]}
+{"text": "notification-service 写库超时,日志里全是 ERROR,日志主题在哪查?", "labels": ["数据库存储", "日志排查"]}
+{"text": "payment-service 报错了,ERROR 日志怎么捞出来?", "labels": ["日志排查"]}
+{"text": "search-service 日志量太大了,怎么按关键字缩小范围?", "labels": ["日志排查"]}
+{"text": "cart-service 的日志怎么导出?我想下载下来慢慢排查。", "labels": ["日志排查"]}
+{"text": "notification-service 写库报死锁了,事务一直回滚,这个日志在哪儿查?", "labels": ["数据库存储", "日志排查"]}
+{"text": "那个 data-sync-service 又趴窝了,日志里全是报错,咋整?", "labels": ["日志排查"]}
+{"text": "刚发版就报错了，帮我查下 payment-service 的 ERROR 日志。", "labels": ["发布相关", "日志排查"]}
+{"text": "日志查询的过滤语法是啥?支持正则不?", "labels": ["日志排查"]}
+{"text": "数据库主库挂了,全实例都连不上,现在是不是得赶紧升级给 DBA 那边,值班猫你能帮我建个单吗", "labels": ["数据库存储", "服务不可用"]}
+{"text": "那个 data-sync-service 又趴窝了咋整，接口全 503", "labels": ["服务不可用"]}
+{"text": "order-service 健康检查不过,已经挂了十分钟了,按值班制度这个级别多久要升级?", "labels": ["服务不可用", "值班制度"]}
+{"text": "api-gateway-service 健康检查失败,是不是要重启一下?顺便问下重启走什么变更流程", "labels": ["服务不可用", "变更申请"]}
+{"text": "user-service 全实例宕机了,你能帮我直接重启吗?还是得我自己操作", "labels": ["服务不可用", "工具使用"]}
+{"text": "search-service 服务不可用,我想先查下日志确认下报错", "labels": ["服务不可用", "日志排查"]}
+{"text": "payment-service 又趴窝了,接口响应也超时变卡了", "labels": ["服务不可用", "响应缓慢"]}
+{"text": "search-service 服务不可用,麻烦帮我查下最近的 ERROR 日志", "labels": ["服务不可用", "日志排查"]}
+{"text": "notification-service 好像整个下线了,值班群要不要发个故障通告", "labels": ["服务不可用", "通知公告"]}
+{"text": "磁盘满了会不会导致服务不可用啊,现在健康检查好像不过了", "labels": ["磁盘异常", "服务不可用"]}
+{"text": "api-gateway-service 的服务等级是几级,属于核心还是非核心?", "labels": ["服务信息"]}
+{"text": "data-sync-service 的 binlog 同步断了,数据对不上,这个归谁负责啊,服务信息里能查到吗?", "labels": ["数据库存储", "服务信息"]}
+{"text": "user-service 的服务编号是多少，我建单要填。", "labels": ["服务信息"]}
+{"text": "notification-service 是核心服务吗,服务等级怎么定的?", "labels": ["服务信息"]}
+{"text": "Redis 挂了会影响哪些服务啊,顺便说下依赖关系?", "labels": ["其他", "数据库存储", "服务信息"]}
+{"text": "api-gateway-service 后面依赖的 Redis 集群有个节点挂了,请求一直超时,该找谁处理?", "labels": ["数据库存储", "服务信息"]}
+{"text": "监控观测这块我不太熟,值班猫能帮我看下 user-service 的监控曲线吗?", "labels": ["监控观测", "工具使用"]}
+{"text": "怎么看监控里的告井曲线?api-gateway-service 那个面板我找不着。", "labels": ["监控观测"]}
+{"text": "监控面板上有个指标叫饱和度,这是啥含义,跟 CPU 使用率是一回事吗?", "labels": ["监控观测"]}
+{"text": "监控观测这块我不太熟,能帮我看看 user-service 的实例数曲线为啥少了一个吗", "labels": ["监控观测"]}
+{"text": "search-service 的监控曲线看着怪怪的,顺便问下这服务是谁负责的?", "labels": ["监控观测", "服务信息"]}
+{"text": "值班猫能不能帮我看下 data-sync-service 的 CPU 曲线,顺便告诉我多少算高", "labels": ["工具使用", "监控观测"]}
+{"text": "值班猫能帮我看监控吗,还是只能我自己去面板上翻", "labels": ["监控观测"]}
+{"text": "order-service 那台机器磁盘快满了,df 一看 92%,这咋整?", "labels": ["磁盘异常"]}
+{"text": "user-service 磁盘使用率一直往上涨，是不是日志没轮转，顺便帮我看看监控曲线在哪查", "labels": ["磁盘异常", "监控观测"]}
+{"text": "order-service 磁盘使用率一直 95% 下不去，是不是有进程在疯狂写日志", "labels": ["磁盘异常"]}
+{"text": "磁盘快满了,顺便问下这服务的日志主题在哪,我想先看看是啥在写", "labels": ["磁盘异常", "日志排查"]}
+{"text": "我想让 OpsPaw 帮我盯一下磁盘使用率,它支持定时提醒吗?", "labels": ["工具使用", "磁盘异常"]}
+{"text": "你能干什么?能帮我看看磁盘使用率吗?", "labels": ["工具使用", "磁盘异常"]}
+{"text": "api-gateway-service 的 /var/log 涨得飞快,是不是日志级别开太高了?", "labels": ["磁盘异常"]}
+{"text": "inode 用完了是啥意思,怎么查哪个目录占的?", "labels": ["磁盘异常"]}
+{"text": "cart-service 磁盘快满了,我想先重启清一下日志再扩容,这两个变更能一起提吗?", "labels": ["变更申请", "磁盘异常"]}
+{"text": "data-sync-service 到 Redis 的网络抖动很严重,丢包率有点高,怎么查?", "labels": ["网络问题"]}
+{"text": "search-service 到 Redis 的网络好像不通,连不上缓存了。", "labels": ["网络问题"]}
+{"text": "notification-service 连 MQ 的链路断了,一直重连不上,网络侧要查啥?", "labels": ["网络问题"]}
+{"text": "这助手能帮我查网络连通性不,api-gateway-service 好像连不上后端了", "labels": ["工具使用", "网络问题"]}
+{"text": "那个 data-sync-service 又趴窝了,跟下游完全连不上,咋整啊", "labels": ["网络问题"]}
+{"text": "刚发完版 api-gateway-service 就连不上了,是不是发布引起的网络问题?", "labels": ["网络问题", "发布相关"]}
+{"text": "值班群同步啥内容啊,是只发故障通告还是恢复通告也要发?", "labels": ["通知公告"]}
+{"text": "恢复通告里要不要写影响时长和根因?给个模板参考下。", "labels": ["通知公告"]}
+{"text": "故障通告和恢复通告的模板是同一个吗?发我看看。", "labels": ["通知公告"]}
+{"text": "order-service 恢复了,发个恢复通高到群里,顺便@一下负责人。", "labels": ["通知公告"]}

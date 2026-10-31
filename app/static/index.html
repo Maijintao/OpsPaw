@@ -1,3 +1,3888 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>OpsPaw · 值班猫</title><link rel="stylesheet" href="/static/acceptance.css"><link rel="stylesheet" href="/static/chat.css"></head>
-<body><div class="chat-shell"><aside class="sidebar"><h1>OpsPaw <span>值班猫</span></h1><button class="btn" id="new-conversation">新建对话</button><nav id="sessions" aria-label="历史会话"></nav></aside><main class="chat-main"><header><div><strong id="conversation-title">新的值班对话</strong><p>让每一次调查，都有据可循。</p></div><nav id="feature-nav"><a class="btn" href="/platforms">平台与监控</a><a class="btn" href="/alerts">告警与巡检</a><a class="btn" href="/incidents">事故中心</a><a class="btn" href="/kb">知识库</a><a class="btn" href="/admin">管理</a><a class="btn" href="/topics">主题分类</a></nav></header><section id="messages" role="log" aria-label="对话消息" aria-live="polite"><div class="welcome"><h2>今天需要处理什么？</h2><p>告诉我问题和已知信息，我们一起查清楚。</p></div></section><form id="composer"><label class="sr-only" for="message-input">输入值班问题</label><textarea id="message-input" placeholder="输入你的问题，Enter 发送，Shift + Enter 换行" required></textarea><button class="btn" id="send">发送</button></form><p id="status" role="status" aria-live="polite"></p></main></div><script src="/static/chat.js"></script><script src="/static/tools-chat.js"></script><script src="/static/diagnosis-chat.js"></script><script src="/static/repair-chat.js"></script><script src="/static/rag-chat.js"></script></body></html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpsPaw · 值班猫</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'><rect x='2' y='2' width='4' height='4' fill='%232b2632'/><rect x='10' y='2' width='4' height='4' fill='%232b2632'/><rect x='2' y='4' width='12' height='9' fill='%232b2632'/><rect x='3' y='3' width='2' height='3' fill='%23ff9f57'/><rect x='11' y='3' width='2' height='3' fill='%23ff9f57'/><rect x='3' y='5' width='10' height='7' fill='%23ff9f57'/><rect x='5' y='7' width='1' height='2' fill='%232b2632'/><rect x='10' y='7' width='1' height='2' fill='%232b2632'/><rect x='7' y='9' width='2' height='1' fill='%23ff8095'/></svg>" />
+  <style>
+    :root {
+      --ink: #2b2632;
+      --fur: #ff9f57;
+      --coral: #ff7a59;
+      --cream: #fff6e6;
+      --paper: #fffaf0;
+      --muted: #9b8f86;
+      --error: #d6455a;
+      --online: #5fcf6a;
+      --shadow: 4px 4px 0 var(--ink);
+      --shadow-sm: 3px 3px 0 var(--ink);
+      --shadow-lg: 8px 8px 0 var(--ink);
+    }
+    * { box-sizing: border-box; }
+    img, svg { image-rendering: pixelated; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas,
+        "PingFang SC", "Microsoft YaHei", monospace;
+      color: var(--ink);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: #f7d9a8;
+      background-image:
+        linear-gradient(rgba(43,38,50,0.05) 2px, transparent 2px),
+        linear-gradient(90deg, rgba(43,38,50,0.05) 2px, transparent 2px);
+      background-size: 24px 24px;
+    }
+    .app {
+      width: 100%;
+      max-width: 1240px;
+      height: 100dvh;
+      display: flex;
+      flex-direction: row;
+      background: var(--cream);
+      overflow: hidden;
+    }
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    /* 两个视图共用同一个框:切换时只换内容,尺寸不变(尺寸跳动看着很臃肿) */
+
+    /* ---------- 顶栏双入口:值班猫 / 服务监控 ---------- */
+    .view-tabs { display: flex; gap: 8px; }
+    .view-tab {
+      display: inline-flex; align-items: center; gap: 5px;
+      border: 3px solid var(--ink); background: var(--paper); color: var(--ink);
+      box-shadow: 2px 2px 0 var(--ink); padding: 4px 9px;
+      font: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
+    }
+    .view-tab:hover { background: #ffe9c9; }
+    .view-tab:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--ink); }
+    .view-tab.active { background: var(--coral); color: #fff; }
+    .view-tab svg { width: 14px; height: 14px; display: block; }
+
+    /* hidden 必须真的隐藏:#messages 有 display:flex,不加 !important 会被覆盖 */
+    [hidden] { display: none !important; }
+
+    /* ---------- 服务监控视图(自己画的五张图) ---------- */
+    #grafana-view { flex: 1; min-height: 0; display: flex; flex-direction: column;
+                    padding: 10px 14px 14px; overflow: auto; }
+    .gv-head { display: flex; align-items: center; gap: 10px; padding: 2px 0 10px; flex: none; }
+    .gv-title { font-weight: 700; font-size: 14px; }
+    .gv-label { font-size: 12px; color: var(--muted); }
+    /* 自绘下拉:原生 select 的皮肤改不动,和 OpsPaw 画风对不上 */
+    .gv-picker { position: relative; }
+    .gv-picker-btn {
+      display: flex; align-items: center; gap: 8px; min-width: 132px;
+      border: 3px solid var(--ink); background: var(--paper); color: var(--ink);
+      box-shadow: 3px 3px 0 var(--ink); padding: 4px 8px;
+      font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .gv-picker-btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+    .gv-picker-btn .caret { margin-left: auto; font-style: normal; font-size: 10px; }
+    .gv-picker-menu {
+      position: absolute; top: calc(100% + 6px); left: 0; z-index: 40;
+      min-width: 100%; max-height: 320px; overflow: auto;
+      border: 3px solid var(--ink); background: var(--paper);
+      box-shadow: 4px 4px 0 var(--ink);
+    }
+    .gv-picker-menu button {
+      display: block; width: 100%; text-align: left; padding: 6px 10px;
+      border: 0; background: transparent; color: var(--ink);
+      font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap;
+    }
+    .gv-picker-menu button:hover { background: #ffe9c9; }
+    .gv-picker-menu button.on { background: var(--coral); color: #fff; font-weight: 700; }
+    .gv-range { display: flex; }
+    .gv-range button {
+      border: 3px solid var(--ink); background: var(--paper); color: var(--ink);
+      padding: 4px 9px; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
+      margin-left: -3px;
+    }
+    .gv-range button:first-child { margin-left: 0; }
+    .gv-range button.on { background: var(--coral); color: #fff; }
+    /* 图例铺满一整行:每条线一个色块,和 Grafana 一样能对上号 */
+    .gv-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px;
+                 padding: 4px 0 3px; max-height: 46px; overflow: auto; }
+    .gv-legend span { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
+    .gv-legend span.on { color: var(--ink); font-weight: 700; }
+    .gv-legend i { width: 12px; height: 3px; display: inline-block; }
+    /* 面板必须是完整的一张,不许被下方的块挤扁 —— 挤扁就没法同时比对几张图。
+       固定一个够高的高度,下面两块放到滚动区里,往下滑才看到。 */
+    .gv-body { flex: none; height: 780px; border: 3px solid var(--ink);
+               box-shadow: 5px 5px 0 var(--ink); background: #fff; overflow: hidden; }
+    @media (max-height: 900px) { .gv-body { height: 680px; } }
+    #gv-frame { width: 100%; height: 100%; border: 0; display: block; }
+    .gv-empty { padding: 24px; font-size: 13px; color: #b07818; text-align: center; }
+
+    /* 面板下面这两块是我们自己画的:指标交给 Grafana,上下文交给我们。
+       调用图是重头(整张大图,可点节点切服务),事件+错误日志合成一块 */
+    .gv-lower { flex: none; display: flex; flex-direction: column;
+                gap: 12px; margin-top: 12px; padding-bottom: 4px; }
+    .gv-panel { border: 3px solid var(--ink); background: var(--paper);
+                box-shadow: 4px 4px 0 var(--ink); padding: 8px 10px;
+                display: flex; flex-direction: column; min-height: 0; flex: none; }
+    .gv-panel.graph { height: 380px; }
+    .gv-panel.merged { height: 230px; }
+    .gv-panel-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; flex: none; }
+    .gv-dim { font-size: 11.5px; color: var(--muted); }
+    .gv-graph-wrap { flex: 1; min-height: 0; overflow: auto;
+                     border: 3px solid var(--ink); background: #fffdf7; }
+    .gv-graph-wrap svg { display: block; margin: 0 auto; }
+    .gv-node { cursor: pointer; }
+    .gv-node:hover rect { stroke-width: 4; }
+    /* 流量涌动:颜色是主信号(绿=小流量→琥珀=中→红=大流量,与地图路况同一套
+       直觉),颗粒大小+速度+线宽做辅助;keyframe 偏移=各档 dasharray 周期,循环无缝 */
+    .gv-flow { fill: none; stroke-linecap: round;
+               animation-timing-function: linear; animation-iteration-count: infinite; }
+    .gv-flow.t4 { stroke-dasharray: 15 8; animation-name: gv-f4; stroke: #d6455a; }
+    .gv-flow.t3 { stroke-dasharray: 12 9; animation-name: gv-f3; stroke: #ff7a59; }
+    .gv-flow.t2 { stroke-dasharray: 9 11; animation-name: gv-f2; stroke: #e0a614; }
+    .gv-flow.t1 { stroke-dasharray: 6 12; animation-name: gv-f1; stroke: #b7c94a; }
+    .gv-flow.t0 { stroke-dasharray: 3 14; animation-name: gv-f0; stroke: #5fcf6a; }
+    @keyframes gv-f4 { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -23; } }
+    @keyframes gv-f3 { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -21; } }
+    @keyframes gv-f2 { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -20; } }
+    @keyframes gv-f1 { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -18; } }
+    @keyframes gv-f0 { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -17; } }
+    @media (prefers-reduced-motion: reduce) { .gv-flow { animation: none; } }
+    .gv-events { flex: 1; min-height: 0; overflow: auto; font-size: 11px; line-height: 1.9; }
+    .gv-sec { font-size: 10.5px; font-weight: 700; color: var(--muted);
+              margin: 6px 0 2px; padding-top: 6px;
+              border-top: 2px dashed rgba(43,38,50,.25); }
+    .gv-events .gv-sec:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+    .gv-log { display: flex; align-items: center; gap: 6px; font-size: 11px; margin: 2px 0; }
+    .gv-log b { border: 2px solid var(--ink); background: #ffe0e0; padding: 0 6px; flex: none; }
+    .gv-ev-row { display: flex; gap: 8px; white-space: nowrap; }
+    .gv-ev-t { color: var(--muted); flex: none; }
+    .gv-ev-s { color: #b07818; }
+
+    /* ---------- 告警接入 ---------- */
+    #sentinel-view { flex: 1; min-height: 0; display: flex; flex-direction: column;
+                     padding: 10px 14px 14px; overflow: auto; }
+    .sn-head { display: flex; align-items: center; gap: 10px; padding: 2px 0 12px; flex: none; }
+    .sn-form { border: 3px solid var(--ink); background: var(--paper);
+               box-shadow: 4px 4px 0 var(--ink); padding: 12px; margin-bottom: 14px; flex: none; }
+    .sn-row { display: flex; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+    .sn-row label { display: flex; flex-direction: column; gap: 4px; font-size: 11px;
+                    color: var(--muted); font-weight: 700; }
+    .sn-row label.grow { flex: 1; min-width: 240px; }
+    .sn-form input, .sn-form select {
+      border: 3px solid var(--ink); background: #fff; color: var(--ink);
+      padding: 5px 8px; font: inherit; font-size: 12px; min-width: 180px;
+    }
+    .sn-checks-label { font-size: 11px; color: var(--muted); font-weight: 700; }
+    /* 维度别摊满整行:紧凑排列,勾选框在文字前面 */
+    .sn-checks { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
+    .sn-checks label { display: inline-flex; flex: none; flex-direction: row; align-items: center;
+                       gap: 5px; font-size: 12px; color: var(--ink); font-weight: 400; cursor: pointer; }
+    .sn-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .action-btn.primary { background: var(--coral); color: #fff; }
+
+    /* 卡片铺满整行(不要拆两列,两列反而挤);flex:none 保证滚动容器能滚 */
+    .sn-list { display: flex; flex-direction: column; gap: 12px; flex: none; }
+    .sn-card { border: 3px solid var(--ink); background: var(--paper);
+               box-shadow: 4px 4px 0 var(--ink); padding: 10px 12px; flex: none; }
+    .sn-card.off { opacity: .55; }
+    .sn-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .sn-name { font-weight: 700; font-size: 13px; }
+    .sn-tag { font-size: 10.5px; border: 2px solid var(--ink); padding: 1px 6px; }
+    .sn-tag.on { background: #d9f2d0; }
+    .sn-tag.off { background: #e8e8e8; }
+    .sn-meta { font-size: 11px; color: var(--muted); line-height: 1.9; }
+    .sn-hook { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    .sn-hook code { flex: 1; min-width: 0; font-size: 11px; background: #fff;
+                    border: 2px dashed rgba(43,38,50,.35); padding: 4px 6px;
+                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sn-ops { display: flex; gap: 6px; margin-left: auto; }
+    .sn-group { border-top: 2px dashed rgba(43,38,50,.25); padding-top: 10px; margin-bottom: 10px; }
+    .sn-group-title { font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
+    .sn-opt { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 7px; cursor: pointer; }
+    .sn-opt > input[type=checkbox] { width: 15px; height: 15px; }
+    .sn-opt > span:first-of-type { font-weight: 700; min-width: 66px; }
+    .sn-opt-arg { color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+    .sn-opt-arg input, .sn-opt-arg select {
+      border: 2px solid var(--ink); background: #fff; padding: 2px 5px;
+      font: inherit; font-size: 11px; min-width: 0;
+    }
+    /* 这个弹窗比工单那个宽:字段多,窄着排会变成一根长条 */
+    #snMask .sn-modal { max-width: 780px; }
+    #snMask .sn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+    @media (max-width: 640px) { #snMask .sn-grid { grid-template-columns: 1fr; } }
+    /* .ticket-field label 是 display:block,这里要盖回来,否则勾选框会跑到文字上面 */
+    #snMask .sn-checks label { display: inline-flex; flex-direction: row; align-items: center;
+                               margin-bottom: 0; white-space: nowrap; }
+    /* 勾选框统一大小,别被全局 input 样式带歪 */
+    #snMask .sn-checks input[type=checkbox] { width: 15px; height: 15px; margin: 0; }
+    /* 弹窗里的下拉:平台占满整行,阈值那两个窄一点 */
+    .sn-picker { width: 100%; }
+    .sn-picker .gv-picker-btn { width: 100%; min-width: 0; font-size: 12px; }
+    .sn-picker-sm { width: auto; display: inline-block; }
+    .sn-picker-sm .gv-picker-btn { width: auto; min-width: 88px; padding: 2px 7px; font-size: 11px; }
+    /* 多选菜单:两列排,16 个服务不至于拉成一根长条 */
+    #snMask .sn-menu-grid { display: grid; grid-template-columns: 1fr 1fr;
+                            gap: 0; max-height: 240px; overflow: auto; width: 100%; }
+    /* .ticket-field label 是 display:block,会把这里的行内布局盖掉,
+       导致勾选框和名字分到两头 —— 选择器必须比它更具体 */
+    #snMask .sn-menu-item { display: flex; align-items: center; gap: 8px;
+                            padding: 6px 10px; font-size: 12px; cursor: pointer;
+                            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+                            margin-bottom: 0; }
+    #snMask .sn-menu-item:hover { background: #ffe9c9; }
+    #snMask .sn-menu-item input { width: 14px; height: 14px; margin: 0; flex: none; }
+    .sn-menu-empty { padding: 8px 10px; font-size: 11.5px; color: var(--muted); }
+    #snMask .sn-actions-row .sn-opt { margin-bottom: 6px; }
+    .sn-hint { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    /* 定时巡检:两种方式都摆出来,不用先去下拉里切 */
+    .sn-opt-block { align-items: flex-start; }
+    .sn-sched-opts { display: flex; flex-direction: column; gap: 7px; }
+    .sn-sub { display: flex; align-items: center; gap: 6px; font-size: 12px;
+              color: var(--ink); cursor: pointer; white-space: nowrap; }
+    .sn-sub input[type=time] { border: 3px solid var(--ink); background: #fff;
+                               font: inherit; font-size: 12px; padding: 3px 6px; }
+    #snMask input[type=radio] {
+      appearance: none; -webkit-appearance: none;
+      width: 17px; height: 17px; margin: 0; flex: none; border-radius: 50%;
+      border: 3px solid var(--ink); background: #fff;
+      box-shadow: 2px 2px 0 var(--ink); cursor: pointer;
+    }
+    #snMask input[type=radio]:checked {
+      background: var(--coral);
+      box-shadow: inset 0 0 0 3px #fff, 2px 2px 0 var(--ink);
+    }
+
+    /* OpsPaw 风格的勾选框:粗黑边 + 硬阴影 + 珊瑚色打勾,不用浏览器默认那个小蓝框 */
+    #snMask input[type=checkbox] {
+      appearance: none; -webkit-appearance: none;
+      width: 17px; height: 17px; margin: 0; flex: none;
+      border: 3px solid var(--ink); background: #fff;
+      box-shadow: 2px 2px 0 var(--ink); cursor: pointer; position: relative;
+    }
+    #snMask input[type=checkbox]:checked { background: var(--coral); }
+    #snMask input[type=checkbox]:checked::after {
+      content: ""; position: absolute; left: 3px; top: 0;
+      width: 4px; height: 9px; border: solid #fff; border-width: 0 2.5px 2.5px 0;
+      transform: rotate(45deg);
+    }
+    /* 弹窗里的数字输入统一成同一套边框,否则"静默期"那个会是个没框的白块 */
+    #snMask input[type=number] {
+      border: 3px solid var(--ink); background: #fff; color: var(--ink);
+      padding: 5px 7px; font: inherit; font-size: 12px;
+      width: 96px;          /* 定宽:否则会跟着 .ticket-field input 的 100% 拉满整行 */
+    }
+    #snMask .sn-hours input { width: 74px; }
+    .sn-hours { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink); }
+    .sn-hours input { width: 68px; }
+    .sn-ev { font-size: 10.5px; color: var(--muted); margin-top: 4px; line-height: 1.8; }
+    .sn-ev b { color: var(--ink); font-weight: 700; }
+    .sn-ev .skip { color: #b07818; }
+
+    /* ---------- 事故中心 ---------- */
+    #incidents-view { flex: 1; min-height: 0; display: flex; flex-direction: column;
+                      padding: 10px 14px 14px; overflow: auto; }
+    .ic-head { display: flex; align-items: center; gap: 10px; padding: 2px 0 12px; flex: none; flex-wrap: wrap; }
+    .ic-stats { display: flex; gap: 6px; }
+    .ic-stat { border: 2px solid var(--ink); background: var(--cream); padding: 2px 8px;
+               font-size: 11px; }
+    .ic-stat b { font-weight: 700; }
+    .ic-card { border: 3px solid var(--ink); background: var(--paper);
+               box-shadow: 4px 4px 0 var(--ink); padding: 10px 12px; flex: none; }
+    .ic-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+    .ic-title { font-weight: 700; font-size: 13px; }
+    .ic-sev { font-size: 10.5px; border: 2px solid var(--ink); padding: 1px 6px; font-weight: 700; }
+    .ic-sev.P0 { background: var(--error); color: #fff; }
+    .ic-sev.P1 { background: var(--coral); color: #fff; }
+    .ic-sev.P2 { background: #ffe9c9; }
+    .ic-sev.P3 { background: #e8e8e8; color: #555; }
+    .ic-status { font-size: 10.5px; border: 2px solid var(--ink); padding: 1px 6px; margin-left: auto; }
+    .ic-status.open, .ic-status.diagnosed, .ic-status.mitigating { background: #ffefc9; font-weight: 700; }
+    .ic-status.mitigating { background: #ffe0e0; }
+    .ic-status.resolved { background: #d9f2d0; }
+    .ic-status.closed, .ic-status.merged { background: #e8e8e8; color: #555; }
+    .ic-meta { font-size: 11px; color: var(--muted); line-height: 1.9; }
+    .ic-meta b { color: var(--ink); }
+    .ic-ops { display: flex; gap: 6px; margin-top: 8px; }
+
+    @media (min-width: 780px) {
+      .app {
+        height: min(90dvh, 860px);
+        border: 4px solid var(--ink);
+        box-shadow: var(--shadow-lg);
+      }
+    }
+
+    /* ---------- ch07:会话侧栏(多会话切换,验收长对话记忆用) ---------- */
+    #sidebar {
+      flex: none;
+      width: 224px;
+      display: flex;
+      flex-direction: column;
+      border-right: 4px solid var(--ink);
+      background: var(--paper);
+    }
+    @media (max-width: 779px) { #sidebar { display: none; } }
+    .sb-head {
+      padding: 14px 12px;
+      border-bottom: 4px solid var(--ink);
+      background: var(--fur);
+      font-weight: 700; font-size: 13px; letter-spacing: 1px;
+    }
+    #conv-list { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    #conv-list::-webkit-scrollbar { width: 10px; }
+    #conv-list::-webkit-scrollbar-thumb { background: var(--fur); border: 2px solid var(--paper); }
+    .conv-item {
+      text-align: left;
+      border: 3px solid var(--ink);
+      background: var(--cream);
+      padding: 8px 9px;
+      cursor: pointer;
+      font-family: inherit;
+      color: var(--ink);
+      box-shadow: 2px 2px 0 var(--ink);
+      transition: transform .06s steps(1), box-shadow .06s steps(1), background .06s;
+    }
+    .conv-item:hover { background: #ffedd6; }
+    .conv-item:active { transform: translate(2px, 2px); box-shadow: none; }
+    .conv-item.active { background: var(--fur); transform: translate(2px, 2px); box-shadow: none; }
+    .conv-item .ci-top { font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+    .conv-item .ci-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+    .conv-item .ci-sum {
+      font-size: 9px; font-weight: 700; color: #fff; background: var(--coral);
+      border: 1px solid var(--ink); padding: 0 4px; letter-spacing: .5px;
+    }
+    /* 删除角标:默认隐形不占视觉,hover 条目才浮现;小方块硬边风格与整页一致 */
+    .conv-item .ci-del {
+      flex: none; width: 18px; height: 18px; line-height: 14px; text-align: center;
+      font-size: 11px; font-weight: 700; color: var(--muted);
+      background: var(--paper); border: 2px solid var(--ink);
+      opacity: 0; transition: opacity .12s; user-select: none; cursor: pointer;
+    }
+    .conv-item:hover .ci-del, .conv-item.active .ci-del { opacity: 1; }
+    .conv-item .ci-del:hover { background: var(--error); color: #fff; }
+    .conv-item .ci-preview {
+      font-size: 11px; color: var(--muted); margin-top: 3px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .sb-empty { font-size: 11.5px; color: var(--muted); text-align: center; padding: 18px 6px; }
+
+    /* ---------- header ---------- */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 4px solid var(--ink);
+      background: var(--fur);
+    }
+    .avatar {
+      flex: none;
+      border: 3px solid var(--ink);
+      background: var(--paper);
+      box-shadow: var(--shadow-sm);
+    }
+    .avatar.lg { width: 46px; height: 46px; padding: 4px; }
+    .avatar.sm { width: 34px; height: 34px; padding: 3px; box-shadow: 2px 2px 0 var(--ink); }
+    .avatar svg { width: 100%; height: 100%; display: block; }
+    .head-meta { display: flex; flex-direction: column; line-height: 1.35; }
+    .head-meta .name { font-weight: 700; font-size: 15px; letter-spacing: .5px; }
+    .head-meta .status { font-size: 11px; color: #6b5b48; display: flex; align-items: center; gap: 6px; }
+    .dot-online { width: 8px; height: 8px; background: var(--online); border: 2px solid var(--ink); }
+    header .spacer { flex: 1; }
+    #new-chat {
+      border: 3px solid var(--ink);
+      background: var(--paper);
+      color: var(--ink);
+      padding: 8px 12px;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: var(--shadow-sm);
+      transition: transform .06s steps(1), box-shadow .06s steps(1);
+    }
+    #new-chat:hover { background: #fff; }
+    #new-chat:active { transform: translate(3px, 3px); box-shadow: none; }
+
+    /* ---------- messages ---------- */
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 18px 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    #messages::-webkit-scrollbar { width: 12px; }
+    #messages::-webkit-scrollbar-track { background: transparent; }
+    #messages::-webkit-scrollbar-thumb { background: var(--fur); border: 3px solid var(--cream); }
+
+    /* 顶对齐:头像钉在消息顶部不动,内容往下长——底对齐会让头像跟着气泡往下沉,
+       流式输出时整条消息看着"往上顶"(工具计时头一长就被顶出视野) */
+    .row { display: flex; align-items: flex-start; gap: 10px; animation: pop .12s steps(2); }
+    .row.user { justify-content: flex-end; }
+    .row.bot { justify-content: flex-start; }
+    @keyframes pop { from { transform: translateY(6px); } to { transform: translateY(0); } }
+
+    .bubble {
+      max-width: 74%;
+      padding: 11px 14px;
+      border: 3px solid var(--ink);
+      line-height: 1.65;
+      font-size: 14.5px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      box-shadow: var(--shadow-sm);
+    }
+    .row.bot .bubble { background: var(--paper); color: var(--ink); }
+    .row.user .bubble { background: var(--coral); color: #fff; }
+    .bubble.error { background: #ffe3e6; color: var(--error); }
+    .tool-badges { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+    .tool-badges:empty { display: none; }
+    .tool-badge {
+      align-self: flex-start;
+      font-size: 12px;
+      color: var(--muted);
+      background: rgba(0,0,0,.05);
+      border: 1px dashed var(--muted);
+      padding: 1px 7px;
+      border-radius: 999px;
+    }
+    /* 工具调用折叠组:运行中实时报次数+耗时,结束后收起成一行,点开展开明细 */
+    .tool-group { margin-bottom: 6px; }
+    .tool-group-head {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; color: var(--muted);
+      background: rgba(0,0,0,.05);
+      border: 1px dashed var(--muted);
+      padding: 2px 10px; border-radius: 999px;
+      cursor: pointer; user-select: none;
+    }
+    .tool-group-head.running { color: var(--ink); border-style: solid; }
+    .tool-group-head .tg-caret { display: inline-block; transition: transform .15s; }
+    .tool-group.open .tool-group-head .tg-caret { transform: rotate(180deg); }
+    /* markdown 渲染(仅 bot 气泡文本区) */
+    .bubble-text { white-space: normal; }
+    .bubble-text > *:first-child { margin-top: 0; }
+    .bubble-text > *:last-child { margin-bottom: 0; }
+    .bubble-text p { margin: 0 0 8px; }
+    .bubble-text h1, .bubble-text h2, .bubble-text h3,
+    .bubble-text h4, .bubble-text h5, .bubble-text h6 {
+      margin: 10px 0 6px; font-size: 15px; font-weight: 700;
+    }
+    .bubble-text ul, .bubble-text ol { margin: 6px 0; padding-left: 20px; }
+    .bubble-text li { margin: 2px 0; }
+    .bubble-text code {
+      background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 4px;
+      font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px;
+    }
+    .bubble-text pre {
+      background: rgba(0,0,0,.06); padding: 8px 10px; border-radius: 6px;
+      overflow-x: auto; margin: 8px 0;
+    }
+    .bubble-text pre code { background: none; padding: 0; }
+    .bubble-text table { border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+    .bubble-text th, .bubble-text td {
+      border: 1px solid var(--muted); padding: 4px 8px; text-align: left;
+    }
+    .bubble-text th { background: rgba(0,0,0,.05); font-weight: 700; }
+    .bubble-text hr { border: none; border-top: 2px dashed var(--muted); margin: 10px 0; }
+    .bubble-text a { color: var(--coral); text-decoration: underline; }
+    .bubble-text strong { font-weight: 700; }
+    .bubble-text blockquote {
+      margin: 6px 0; padding: 2px 10px; border-left: 3px solid var(--muted); color: var(--muted);
+    }
+
+    /* ---------- ch04:可点引用角标 + 来源浮层 ---------- */
+    .cite {
+      cursor: pointer;
+      color: var(--coral);
+      font-weight: 700;
+      font-size: 11px;
+      vertical-align: super;
+      line-height: 0;
+      padding: 0 1px;
+      border-bottom: 2px solid var(--coral);
+      user-select: none;
+    }
+    .cite:hover { background: var(--coral); color: #fff; }
+    .cite-pop {
+      position: fixed;
+      z-index: 50;
+      background: var(--paper);
+      border: 3px solid var(--ink);
+      box-shadow: var(--shadow);
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.55;
+      max-height: 50vh;
+      overflow-y: auto;
+    }
+    .cite-pop-path {
+      font-weight: 700; font-size: 12px; color: var(--coral);
+      border-bottom: 2px dashed var(--muted); padding-bottom: 5px; margin-bottom: 6px;
+      word-break: break-word;
+    }
+    .cite-pop-q { font-weight: 700; margin-bottom: 4px; }
+    .cite-pop-a { color: var(--ink); white-space: pre-wrap; word-break: break-word; }
+    .cite-pop-meta { margin-top: 7px; font-size: 11px; color: var(--muted); }
+
+    /* ---------- ch04:每段回答满意度反馈(👍/👎) ---------- */
+    .feedback { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+    .fb-btn {
+      border: 2px solid var(--ink);
+      background: var(--paper);
+      color: var(--ink);
+      width: 32px; height: 28px;
+      display: grid; place-items: center;
+      font-size: 14px; line-height: 1; padding: 0;
+      font-family: inherit;
+      cursor: pointer;
+      box-shadow: 2px 2px 0 var(--ink);
+      transition: transform .06s steps(1), box-shadow .06s steps(1), background .06s;
+    }
+    .fb-btn:hover:not(:disabled) { background: #ffedd6; }
+    .fb-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: none; }
+    .fb-btn.active { background: var(--coral); color: #fff; transform: translate(2px, 2px); box-shadow: none; }
+    .fb-btn.dim { opacity: .4; }
+    .fb-btn:disabled { cursor: default; }
+    .fb-btn svg { width: 18px; height: 18px; display: block; image-rendering: auto; }
+    .fb-done { font-size: 11px; color: var(--muted); letter-spacing: .3px; }
+
+    /* typing indicator (blocky) */
+    .typing { display: inline-flex; gap: 5px; padding: 3px 1px; }
+    .typing span {
+      width: 8px; height: 8px; background: var(--coral);
+      animation: blink 1s steps(2) infinite;
+    }
+    .typing span:nth-child(2) { animation-delay: .2s; }
+    .typing span:nth-child(3) { animation-delay: .4s; }
+    @keyframes blink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: .25; } }
+
+    /* ---------- empty state ---------- */
+    .empty {
+      margin: auto;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 20px 12px;
+      animation: pop .16s steps(3);
+    }
+    .empty .mascot {
+      width: 96px; height: 96px; padding: 10px;
+      border: 4px solid var(--ink);
+      background: var(--paper);
+      box-shadow: var(--shadow);
+      margin-bottom: 12px;
+    }
+    .empty .mascot svg { width: 100%; height: 100%; display: block; }
+    .empty h1 { font-size: 18px; margin: 0; font-weight: 700; letter-spacing: 1px; }
+    .empty p { margin: 0; color: var(--muted); font-size: 13px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 18px; max-width: 440px; }
+    .chip {
+      border: 3px solid var(--ink);
+      background: var(--paper);
+      color: var(--ink);
+      padding: 9px 14px;
+      font-family: inherit;
+      font-size: 12.5px;
+      cursor: pointer;
+      box-shadow: var(--shadow-sm);
+      transition: transform .06s steps(1), box-shadow .06s steps(1), background .06s;
+    }
+    .chip:hover { background: #ffedd6; }
+    .chip:active { transform: translate(3px, 3px); box-shadow: none; }
+
+    /* ---------- ch05:actions 帧 - 转人工/建工单两独立按钮 ---------- */
+    .action-bar { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    .action-btn {
+      border: 3px solid var(--ink);
+      background: var(--paper);
+      color: var(--ink);
+      padding: 8px 14px;
+      font-family: inherit;
+      font-size: 12.5px;
+      cursor: pointer;
+      box-shadow: var(--shadow-sm);
+      transition: transform .06s steps(1), box-shadow .06s steps(1), background .06s;
+    }
+    .action-btn:hover:not(:disabled) { background: #ffedd6; }
+    .action-btn:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }
+    .action-btn:disabled { background: #e8dcc8; color: var(--muted); cursor: not-allowed; }
+
+    /* ---------- diagnosis:根因分析卡片(聊天内小框,轮询诊断任务) ---------- */
+    .diag-card {
+      margin-top: 12px; max-width: 500px;
+      border: 3px solid var(--ink); background: var(--paper);
+      box-shadow: var(--shadow-sm);
+    }
+    .diag-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+    .diag-icon { font-size: 18px; }
+    .diag-icon.running { animation: diagPulse 1s steps(2) infinite; }
+    @keyframes diagPulse { 50% { transform: scale(1.18); } }
+    .diag-head-txt { flex: 1; min-width: 0; }
+    .diag-title { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+    .diag-title.ok { color: var(--error); }
+    .diag-title.warn { color: #b07818; }
+    .diag-stage {
+      font-size: 11.5px; color: var(--muted); margin-top: 3px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .diag-toggle { flex-shrink: 0; padding: 6px 10px; font-size: 11.5px; }
+    .diag-body { border-top: 3px solid var(--ink); padding: 12px; }
+    .diag-sec { margin-bottom: 12px; }
+    .diag-sec:last-child { margin-bottom: 0; }
+    .diag-sec h4 {
+      margin: 0 0 6px; font-size: 11.5px; color: var(--muted);
+      font-weight: 700; letter-spacing: 1px;
+    }
+    .diag-verdict {
+      border: 3px solid var(--ink); padding: 8px 10px;
+      font-size: 12.5px; font-weight: 700; background: var(--cream);
+    }
+    .diag-verdict.rc { background: var(--error); color: #fff; }
+    .diag-verdict.cf { background: var(--coral); color: #fff; }
+    .diag-verdict.inc { background: #ffefc9; color: var(--ink); }
+    .diag-cands { font-size: 11.5px; color: var(--ink); line-height: 1.7; }
+    .diag-cands b { color: var(--error); }
+    .diag-graph-wrap {
+      overflow-x: auto; border: 2px solid var(--ink); background: #fffdf7;
+    }
+    .diag-svg { display: block; }
+    .diag-events { max-height: 150px; overflow-y: auto; }
+    .diag-ev { font-size: 11.5px; line-height: 1.8; color: var(--ink); }
+    .diag-ev .ts { color: var(--muted); font-size: 10.5px; margin-right: 6px; }
+    .diag-ev .st {
+      display: inline-block; border: 1.5px solid var(--ink); background: var(--cream);
+      font-size: 10px; padding: 0 5px; margin-right: 6px;
+    }
+    .diag-chain li, .diag-missing li { font-size: 11.5px; line-height: 1.7; margin-bottom: 4px; }
+    .diag-chain, .diag-missing { padding-left: 18px; margin: 0; }
+    .diag-missing li { color: #b07818; }
+    .diag-note { font-size: 11px; color: var(--muted); margin-top: 8px; }
+
+    /* 诊断卡底部:确认根因 → 修复计划 → 执行/验证,全部走同一张卡,不另起弹窗 */
+    .diag-foot { border-top: 3px solid var(--ink); padding: 10px 12px; }
+    .diag-foot .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .diag-foot .hint { font-size: 11.5px; color: var(--muted); line-height: 1.7; margin: 0 0 8px; }
+    .diag-foot .err { font-size: 11.5px; color: var(--error); line-height: 1.7; margin: 6px 0 0; }
+    .diag-sel {
+      font: inherit; font-size: 11.5px; border: 2px solid var(--ink);
+      background: var(--paper); padding: 5px 7px;
+    }
+    .diag-plan {
+      border: 2px solid var(--ink); background: var(--cream);
+      padding: 8px 10px; font-size: 12px; line-height: 1.8;
+    }
+    .diag-plan .kv { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .diag-plan .tag {
+      border: 2px solid var(--ink); padding: 0 6px; font-size: 10.5px; background: var(--paper);
+    }
+    .diag-plan .tag.warn { background: var(--fur); }
+    .diag-plan .tag.bad { background: var(--error); color: #fff; }
+    .diag-plan .tag.ok { background: var(--online); }
+    .diag-plan .meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    /* ---------- ch05:建工单表单弹窗 ---------- */
+    .modal-mask {
+      position: fixed; inset: 0; z-index: 50;
+      background: rgba(43, 38, 50, .45);
+      display: none; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .modal-mask.open { display: flex; }
+    .ticket-modal {
+      width: 100%; max-width: 420px;
+      background: var(--paper);
+      border: 4px solid var(--ink);
+      box-shadow: var(--shadow-lg);
+      padding: 20px;
+    }
+    .ticket-modal h3 { margin: 0 0 4px; font-size: 16px; color: var(--ink); }
+    .ticket-modal .sub { margin: 0 0 16px; font-size: 12px; color: var(--muted); }
+    .ticket-field { margin-bottom: 14px; }
+    .ticket-field label { display: block; font-size: 12.5px; margin-bottom: 6px; color: var(--ink); }
+    .ticket-field label .req { color: var(--error); }
+    .ticket-field select,
+    .ticket-field textarea {
+      width: 100%; font-family: inherit; font-size: 13px; color: var(--ink);
+      border: 3px solid var(--ink); background: var(--cream);
+      padding: 9px 10px; box-shadow: var(--shadow-sm);
+    }
+    .ticket-field textarea { resize: vertical; min-height: 88px; }
+    .ticket-field select:focus,
+    .ticket-field textarea:focus { outline: none; background: #fff; }
+    .ticket-err { color: var(--error); font-size: 12px; min-height: 16px; margin: -6px 0 10px; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+    .modal-actions button {
+      border: 3px solid var(--ink); font-family: inherit; font-size: 13px;
+      padding: 9px 16px; cursor: pointer; box-shadow: var(--shadow-sm);
+    }
+    .modal-actions .cancel { background: var(--paper); color: var(--ink); }
+    .modal-actions .cancel:hover { background: #ffedd6; }
+    .modal-actions .submit { background: var(--coral); color: #fff; }
+    .modal-actions .submit:hover:not(:disabled) { background: #ff6a45; }
+    .modal-actions button:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }
+    .modal-actions .submit:disabled { background: #e8dcc8; color: var(--muted); cursor: not-allowed; }
+    /* ch06:变更表单只读服务标识输入框(真实服务=服务名) */
+    .ticket-field input {
+      width: 100%; font-family: inherit; font-size: 13px; color: var(--muted);
+      border: 3px solid var(--ink); background: #efe6d4;
+      padding: 9px 10px; box-shadow: var(--shadow-sm);
+    }
+    /* ch06:服务选择器卡片(interrupt 未锁定服务名时聊天流里点选) */
+    .order-cards { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    .order-card {
+      text-align: left; border: 3px solid var(--ink); background: var(--cream);
+      padding: 9px 11px; cursor: pointer; box-shadow: var(--shadow-sm);
+      font-family: inherit; color: var(--ink);
+    }
+    .order-card:hover:not(:disabled) { background: #ffedd6; }
+    .order-card:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }
+    .order-card:disabled { cursor: not-allowed; opacity: .55; }
+    .order-card.picked { background: #ffe0b3; opacity: 1; }
+    .order-card .oc-top { font-size: 13px; font-weight: 700; }
+    .order-card .oc-mid { font-size: 12.5px; margin-top: 2px; }
+    .order-card .oc-bot { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
+    /* ---------- ch08:工单预览确认卡(interrupt confirm_ticket) ---------- */
+    .ticket-confirm {
+      border: 3px solid var(--ink); background: var(--cream);
+      padding: 10px 12px; margin-top: 10px; box-shadow: var(--shadow-sm);
+    }
+    .ticket-confirm .tc-title { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+    .ticket-confirm .tc-row { font-size: 12.5px; margin-top: 3px; display: flex; gap: 6px; }
+    .ticket-confirm .tc-label { color: var(--muted); flex: none; }
+    .ticket-confirm .tc-btns { display: flex; gap: 8px; margin-top: 10px; }
+    .ticket-confirm .tc-cancel { background: var(--paper); }
+    .ticket-confirm.decided { opacity: .75; }
+
+    /* ---------- composer ---------- */
+    footer { padding: 14px 16px 16px; border-top: 4px solid var(--ink); background: var(--cream); }
+    .composer {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      background: var(--paper);
+      border: 3px solid var(--ink);
+      padding: 8px 8px 8px 14px;
+      box-shadow: var(--shadow);
+    }
+    #input {
+      flex: 1;
+      resize: none;
+      border: none;
+      background: transparent;
+      padding: 8px 0;
+      font-size: 14.5px;
+      font-family: inherit;
+      line-height: 1.5;
+      max-height: 128px;
+      color: var(--ink);
+    }
+    #input:focus { outline: none; }
+    #input::placeholder { color: var(--muted); }
+    #send {
+      flex: none;
+      width: 44px; height: 44px;
+      border: 3px solid var(--ink);
+      background: var(--coral);
+      color: #fff;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      box-shadow: var(--shadow-sm);
+      transition: transform .06s steps(1), box-shadow .06s steps(1);
+    }
+    #send:hover:not(:disabled) { background: #ff8b6d; }
+    #send:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }
+    #send:disabled { background: #d8cbc0; cursor: not-allowed; box-shadow: none; }
+    #send svg { width: 22px; height: 22px; display: block; }
+    .foot-note { text-align: center; color: var(--muted); font-size: 11px; margin: 10px 0 0; letter-spacing: .3px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside id="sidebar">
+      <div class="sb-head">会话记录</div>
+      <div id="conv-list"></div>
+    </aside>
+    <div class="main">
+    <header>
+      <div class="avatar lg" data-cat></div>
+      <div class="head-meta">
+        <span class="name">OpsPaw · 值班猫</span>
+        <span class="status"><span class="dot-online"></span>ONLINE · 值班中</span>
+      </div>
+      <div class="spacer"></div>
+      <div class="view-tabs" role="tablist">
+        <button class="view-tab active" type="button" data-view="chat">
+          <span data-cat></span>值班猫
+        </button>
+        <button class="view-tab" type="button" data-view="grafana">
+          <svg viewBox="0 0 16 16" fill="currentColor" shape-rendering="crispEdges">
+            <rect x="1" y="9" width="3" height="6"/><rect x="6" y="5" width="3" height="10"/>
+            <rect x="11" y="2" width="3" height="13"/>
+          </svg>服务监控
+        </button>
+        <button class="view-tab" type="button" data-view="sentinel">
+          <svg viewBox="0 0 16 16" fill="currentColor" shape-rendering="crispEdges">
+            <rect x="6" y="1" width="4" height="2"/><rect x="4" y="3" width="8" height="7"/>
+            <rect x="3" y="10" width="10" height="2"/><rect x="7" y="12" width="2" height="2"/>
+          </svg>告警接入
+        </button>
+        <button class="view-tab" type="button" data-view="incidents">
+          <svg viewBox="0 0 16 16" fill="currentColor" shape-rendering="crispEdges">
+            <rect x="3" y="1" width="2" height="14"/><rect x="5" y="2" width="8" height="2"/>
+            <rect x="5" y="4" width="6" height="2"/><rect x="5" y="6" width="8" height="2"/>
+          </svg>事故中心
+        </button>
+      </div>
+      <button id="new-chat" type="button">＋ 新对话</button>
+    </header>
+
+    <section id="grafana-view" hidden>
+      <div class="gv-head">
+        <span class="gv-title">服务监控</span>
+        <span class="gv-label">平台</span>
+        <div class="gv-picker">
+          <button type="button" class="gv-picker-btn" id="gv-plat-btn">
+            <span id="gv-plat-cur">—</span><i class="caret">▾</i>
+          </button>
+          <div class="gv-picker-menu" id="gv-plat-menu" hidden></div>
+        </div>
+        <div class="spacer"></div>
+        <span class="gv-label">服务</span>
+        <div class="gv-picker">
+          <button type="button" class="gv-picker-btn" id="gv-picker-btn">
+            <span id="gv-picker-cur">全部</span><i class="caret">▾</i>
+          </button>
+          <div class="gv-picker-menu" id="gv-picker-menu" hidden></div>
+        </div>
+        <div class="gv-range" id="gv-range">
+          <button type="button" data-min="60" class="on">1 小时</button>
+          <button type="button" data-min="360">6 小时</button>
+          <button type="button" data-min="1440">24 小时</button>
+        </div>
+      </div>
+      <div class="gv-body"><iframe id="gv-frame" title="服务监控面板"></iframe></div>
+      <div class="gv-lower">
+        <div class="gv-panel graph">
+          <div class="gv-panel-title">上下游调用图
+            <span class="gv-dim">(点击节点切换服务 · 颜色绿→红=真实调用量)</span>
+          </div>
+          <div class="gv-graph-wrap" id="gv-topo"><span class="gv-dim">读取中…</span></div>
+        </div>
+        <div class="gv-panel merged">
+          <div class="gv-panel-title">最近事件 · 错误日志</div>
+          <div class="gv-events" id="gv-events"><span class="gv-dim">读取中…</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="sentinel-view" hidden>
+      <div class="sn-head">
+        <span class="gv-title">告警接入</span>
+        <span class="gv-label">告警系统 POST 到这个地址,就按配置自动发起诊断</span>
+        <div class="spacer"></div>
+        <button type="button" class="action-btn" id="sn-new">＋ 新建接入</button>
+      </div>
+      <div class="sn-list" id="sn-list"></div>      <div class="sn-list" id="sn-list"></div>
+    </section>
+
+    <section id="incidents-view" hidden>
+      <div class="ic-head">
+        <span class="gv-title">事故中心</span>
+        <div class="ic-stats" id="ic-stats"></div>
+        <span class="gv-label">同一故障的多条告警自动并成一起事故</span>
+        <div class="spacer"></div>
+        <div class="gv-picker">
+          <button type="button" class="gv-picker-btn" id="ic-filter-btn">
+            <span id="ic-filter-cur">未关闭</span><i class="caret">▾</i>
+          </button>
+          <div class="gv-picker-menu" id="ic-filter-menu" hidden></div>
+        </div>
+        <button type="button" class="action-btn" id="ic-refresh">刷新</button>
+      </div>
+      <div class="sn-list" id="ic-list"><span class="gv-dim">读取中…</span></div>
+    </section>
+
+    <div id="messages"></div>
+
+    <footer>
+      <div class="composer">
+        <textarea id="input" rows="1" placeholder="输入消息,和值班猫聊聊吧~(回车发送 / Shift+回车换行)"></textarea>
+        <button id="send" type="button" aria-label="发送">
+          <svg viewBox="0 0 16 16" shape-rendering="crispEdges" fill="currentColor">
+            <rect x="2" y="7" width="8" height="2"/><rect x="8" y="5" width="2" height="2"/>
+            <rect x="8" y="9" width="2" height="2"/><rect x="10" y="3" width="2" height="2"/>
+            <rect x="10" y="11" width="2" height="2"/><rect x="12" y="1" width="2" height="2"/>
+            <rect x="12" y="13" width="2" height="2"/>
+          </svg>
+        </button>
+      </div>
+      <p class="foot-note">OpsPaw 是 AI 助手,涉及具体处置会为你转接人工值班核实</p>
+    </footer>
+    </div><!-- /.main -->
+  </div>
+
+  <!-- ch05:建工单表单弹窗(点「建工单」弹出,选类别+填描述再提交) -->
+  <div class="modal-mask" id="ticketMask">
+    <div class="ticket-modal" role="dialog" aria-modal="true" aria-labelledby="ticketTitle">
+      <h3 id="ticketTitle">创建工单</h3>
+      <p class="sub">OpsPaw 会把问题登记成工单跟进处理</p>
+      <div class="ticket-field">
+        <label for="ticketType">反馈类别 <span class="req">*</span></label>
+        <select id="ticketType">
+          <option value="" disabled selected>请选择反馈类别…</option>
+          <option value="故障">故障</option>
+          <option value="变更">变更</option>
+          <option value="咨询">咨询</option>
+        </select>
+      </div>
+      <div class="ticket-field">
+        <label for="ticketDesc">反馈描述 <span class="req">*</span></label>
+        <textarea id="ticketDesc" placeholder="请描述您遇到的问题…"></textarea>
+      </div>
+      <div class="ticket-err" id="ticketErr"></div>
+      <div class="modal-actions">
+        <button type="button" class="cancel" id="ticketCancel">取消</button>
+        <button type="button" class="submit" id="ticketSubmit">提交工单</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-mask" id="changeMask">
+    <div class="ticket-modal" role="dialog" aria-modal="true" aria-labelledby="changeTitle">
+      <h3 id="changeTitle">提交变更申请</h3>
+      <p class="sub">确认服务与变更类型后提交,OpsPaw 会为您登记变更申请</p>
+      <div class="ticket-field">
+        <label for="changeService">服务</label>
+        <input id="changeService" type="text" readonly />
+      </div>
+      <div class="ticket-field">
+        <label for="changeType">变更类型 <span class="req">*</span></label>
+        <select id="changeType">
+          <option value="" disabled selected>请选择变更类型…</option>
+          <option value="重启服务">重启服务</option>
+          <option value="扩容实例">扩容实例</option>
+          <option value="回滚版本">回滚版本</option>
+          <option value="其他">其他</option>
+        </select>
+      </div>
+      <div class="ticket-err" id="changeErr"></div>
+      <div class="modal-actions">
+        <button type="button" class="cancel" id="changeCancel">取消</button>
+        <button type="button" class="submit" id="changeSubmit">提交变更</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 告警接入表单弹窗:和工单弹窗同一套外观,不用原地下怼那种展开 -->
+  <div class="modal-mask" id="snMask">
+    <div class="ticket-modal sn-modal" role="dialog" aria-modal="true" aria-labelledby="snFormTitle">
+      <h3 id="snFormTitle">新建接入</h3>
+      <p class="sub">配置"什么时候该看一眼":定时巡检 / 外部告警 / 指标阈值,可以同时开</p>
+
+      <div class="sn-grid">
+      <div class="ticket-field">
+        <label for="sn-name">名称 <span class="req">*</span></label>
+        <input id="sn-name" placeholder="例如:商品页巡检">
+      </div>
+      <div class="ticket-field">
+        <label>平台 <span class="req">*</span></label>
+        <div class="gv-picker sn-picker">
+          <button type="button" class="gv-picker-btn" id="sn-target-btn">
+            <span>—</span><i class="caret">▾</i>
+          </button>
+          <div class="gv-picker-menu" id="sn-target-menu" hidden></div>
+        </div>
+        <input type="hidden" id="sn-target">
+      </div>
+      </div>
+      <div class="ticket-field">
+        <label>服务(不选 = 平台自动找)</label>
+        <div class="gv-picker sn-picker">
+          <button type="button" class="gv-picker-btn" id="sn-services-btn">
+            <span>全部服务</span><i class="caret">▾</i>
+          </button>
+          <div class="gv-picker-menu sn-menu-grid" id="sn-services-menu" hidden></div>
+        </div>
+        <input type="hidden" id="sn-services">
+      </div>
+      <div class="ticket-field">
+        <label>关注维度</label>
+        <div class="sn-checks" id="sn-checks"></div>
+      </div>
+
+      <div class="sn-group">
+        <div class="sn-group-title">触发方式(可同时开)</div>
+        <div class="sn-opt sn-opt-block">
+          <input type="checkbox" id="sn-t-sched">
+          <span>定时巡检</span>
+          <div class="sn-sched-opts">
+            <label class="sn-sub">
+              <input type="radio" name="sn-sched-mode" value="cron" checked>
+              每天 <input type="time" id="sn-sched-at" value="00:00"> 跑一次
+            </label>
+            <label class="sn-sub">
+              <input type="radio" name="sn-sched-mode" value="interval">
+              每 <input type="number" id="sn-sched-min" min="1" max="1440" value="10"> 分钟跑一次
+            </label>
+          </div>
+        </div>
+        <label class="sn-opt">
+          <input type="checkbox" id="sn-t-hook" checked>
+          <span>外部告警</span>
+          <span class="sn-opt-arg">告警平台 POST 到 webhook 地址就触发</span>
+        </label>
+        <label class="sn-opt">
+          <input type="checkbox" id="sn-t-th">
+          <span>指标阈值</span>
+          <span class="sn-opt-arg">
+            <div class="gv-picker sn-picker sn-picker-sm">
+              <button type="button" class="gv-picker-btn" id="sn-th-metric-btn">
+                <span>错误率</span><i class="caret">▾</i>
+              </button>
+              <div class="gv-picker-menu" id="sn-th-metric-menu" hidden></div>
+            </div>
+            <input type="hidden" id="sn-th-metric">
+            <div class="gv-picker sn-picker sn-picker-sm">
+              <button type="button" class="gv-picker-btn" id="sn-th-op-btn">
+                <span>高于</span><i class="caret">▾</i>
+              </button>
+              <div class="gv-picker-menu" id="sn-th-op-menu" hidden></div>
+            </div>
+            <input type="hidden" id="sn-th-op">
+            <input type="number" id="sn-th-value" value="5" step="0.1" style="width:74px">
+          </span>
+        </label>
+      </div>
+
+      <div class="sn-group">
+        <div class="sn-group-title">收敛</div>
+        <div class="sn-grid">
+          <div class="ticket-field">
+            <label for="sn-silence">静默期(分钟)</label>
+            <input type="number" id="sn-silence" min="0" max="1440" value="15">
+          </div>
+          <div class="ticket-field">
+            <label>生效时段(小时)</label>
+            <div class="sn-hours">
+              <input type="number" id="sn-hour-start" min="0" max="23" value="0"> 点到
+              <input type="number" id="sn-hour-end" min="0" max="24" value="24"> 点
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sn-group">
+        <div class="sn-group-title">检测出来之后</div>
+        <div class="sn-actions-row">
+          <label class="sn-opt">
+            <input type="checkbox" id="sn-act-forward">
+            <span>自动转发</span>
+            <span class="sn-opt-arg">把触发和结论推给你的接口(可和自动修复同时开)</span>
+          </label>
+          <label class="sn-opt">
+            <input type="checkbox" id="sn-act-repair">
+            <span>自动修复</span>
+            <span class="sn-opt-arg">诊断出根因就派修复单(高危)</span>
+          </label>
+          <div class="sn-hint">两个都不勾 = 只诊断,出结论就停,由人决定下一步</div>
+        </div>
+        <div class="ticket-field" id="sn-fwd-wrap" hidden style="margin-top:8px">
+          <label for="sn-forward">转发地址(POST,收到触发和结论两条)</label>
+          <input id="sn-forward" placeholder="https://your-sys/hooks/opspaw">
+        </div>
+      </div>
+
+      <div class="ticket-err" id="snErr"></div>
+      <div class="modal-actions">
+        <button type="button" class="cancel" id="sn-cancel">取消</button>
+        <button type="button" class="submit" id="sn-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 通用确认弹窗:替代原生 confirm(),与工单/变更弹窗同一套风格 -->
+  <div class="modal-mask" id="confirmMask">
+    <div class="ticket-modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+      <h3 id="confirmTitle">确认操作</h3>
+      <p class="sub" id="confirmText"></p>
+      <div class="modal-actions">
+        <button type="button" class="cancel" id="confirmCancel">取消</button>
+        <button type="button" class="submit" id="confirmOk">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SESSION_KEY = "opspaw_session_id";        // 稳定值班人标识,作 user_id
+    const CONV_KEY = "opspaw_conversation_id";      // 当前会话 id,由后端 done 帧回传
+    const SUGGESTIONS = ["服务 CPU 飙高怎么排查?", "怎么查服务日志?", "告警阈值是多少?", "发布窗口是几点?"];
+    const CAT_SVG =
+      '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
+      '<rect x="2" y="2" width="4" height="4" fill="#2b2632"/>' +
+      '<rect x="10" y="2" width="4" height="4" fill="#2b2632"/>' +
+      '<rect x="2" y="4" width="12" height="9" fill="#2b2632"/>' +
+      '<rect x="3" y="3" width="2" height="3" fill="#ff9f57"/>' +
+      '<rect x="11" y="3" width="2" height="3" fill="#ff9f57"/>' +
+      '<rect x="3" y="5" width="10" height="7" fill="#ff9f57"/>' +
+      '<rect x="5" y="7" width="1" height="2" fill="#2b2632"/>' +
+      '<rect x="10" y="7" width="1" height="2" fill="#2b2632"/>' +
+      '<rect x="7" y="9" width="2" height="1" fill="#ff8095"/>' +
+      '<rect x="4" y="10" width="1" height="1" fill="#ffd7a8"/>' +
+      '<rect x="11" y="10" width="1" height="1" fill="#ffd7a8"/>' +
+      "</svg>";
+    // 点赞/点踩大拇指(矢量填充,fill=currentColor:平时 ink、点亮时随按钮变白)
+    const THUMB_UP_SVG =
+      '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/></svg>';
+    const THUMB_DOWN_SVG =
+      '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"/></svg>';
+    const messagesEl = document.getElementById("messages");
+    const inputEl = document.getElementById("input");
+    const sendBtn = document.getElementById("send");
+    const newChatBtn = document.getElementById("new-chat");
+    // 两个互不相干的状态,别拿一个按钮的 disabled 当共用的锁(踩过):
+    // BUSY = 正在等回复(这时不许发、也不许切会话);READONLY = 只读账号(永远不许发)。
+    let BUSY = false;
+    let READONLY = false;
+
+    for (const el of document.querySelectorAll("[data-cat]")) el.innerHTML = CAT_SVG;
+
+    // 会话归属跟着**登录账号**走,不跟着浏览器走:
+    // 之前这里是本机随机 id,换台电脑就看不到自己的会话,也没法把记录给别人看。
+    let ACCOUNT_UID = null;     // 由 /api/whoami 填,首屏前拿到
+    function getUserId() {
+      if (ACCOUNT_UID) return ACCOUNT_UID;
+      // whoami 还没回来时先用本机旧 id 顶着,避免首屏请求带空 user_id
+      let id = localStorage.getItem(SESSION_KEY);
+      if (!id) {
+        id = newSessionId();
+        localStorage.setItem(SESSION_KEY, id);
+      }
+      return id;
+    }
+
+    // 会话标识:优先 crypto.randomUUID。但用公网纯 http(如 http://IP:8000)打开时
+    // 不是安全上下文,randomUUID 根本不存在——原来这里直接抛错,整段脚本当场断掉,
+    // 表现就是"聊天区一片空白、侧栏也没内容"。退路用 getRandomValues(非安全上下文可用)。
+    function newSessionId() {
+      try {
+        if (window.crypto && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+      } catch (e) { /* 落到下面的退路 */ }
+      const bytes = new Uint8Array(16);
+      if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes);
+      else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+      return "s-" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    function getConversationId() {
+      const v = localStorage.getItem(CONV_KEY);
+      return v ? Number(v) : null;
+    }
+    function setConversationId(id) {
+      if (id != null) localStorage.setItem(CONV_KEY, String(id));
+    }
+    function clearConversationId() {
+      localStorage.removeItem(CONV_KEY);
+    }
+
+    function renderEmptyState() {
+      messagesEl.innerHTML = "";
+      const wrap = document.createElement("div");
+      wrap.className = "empty";
+      wrap.innerHTML =
+        '<div class="mascot">' + CAT_SVG + "</div>" +
+        "<h1>你好,我是 OpsPaw</h1>" +
+        "<p>值班猫助理,服务状态、监控日志、故障变更都能问我~</p>" +
+        '<div class="chips"></div>';
+      const chips = wrap.querySelector(".chips");
+      for (const s of SUGGESTIONS) {
+        const c = document.createElement("button");
+        c.className = "chip";
+        c.type = "button";
+        c.textContent = s;
+        c.addEventListener("click", () => { if (!sendBtn.disabled) send(s); });
+        chips.appendChild(c);
+      }
+      messagesEl.appendChild(wrap);
+    }
+
+    function clearEmptyState() {
+      const e = messagesEl.querySelector(".empty");
+      if (e) e.remove();
+    }
+
+    function addRow(role, { scroll = true } = {}) {
+      clearEmptyState();
+      const row = document.createElement("div");
+      row.className = "row " + role;
+      if (role === "bot") {
+        const av = document.createElement("div");
+        av.className = "avatar sm";
+        av.innerHTML = CAT_SVG;
+        row.appendChild(av);
+      }
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      row.appendChild(bubble);
+      messagesEl.appendChild(row);
+      // 读 scrollHeight 会强制浏览器同步排版(layout);历史回载逐条调它 = 每条一次
+      // 全量布局,几十条消息就是几十次,切换会话的掉帧主因——回载路径传 scroll:false,
+      // 全部行就位后由调用方滚一次。
+      if (scroll) messagesEl.scrollTop = messagesEl.scrollHeight;
+      return bubble;
+    }
+
+    function showTyping(bubble) {
+      bubble.innerHTML = '<span class="typing"><span></span><span></span><span></span></span>';
+    }
+
+    function setBusy(busy) {
+      // 输入框平时不禁用:agent 输出时人照样能打字(想好下一句),只是回车/发送键不让发。
+      // 只读账号是另一回事——那是没权限,不是"忙着",输入框要一直灰着。
+      BUSY = busy;
+      sendBtn.disabled = busy || READONLY;
+      inputEl.disabled = READONLY;
+      if (!busy && !READONLY) inputEl.focus();
+    }
+
+    // ---------- 轻量 markdown 渲染(零依赖,先转义再解析,防注入) ----------
+    function escapeHtml(s) {
+      return s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    }
+    function renderInline(s) {
+      s = s.replace(/`([^`]+)`/g, (m, c) => "<code>" + c + "</code>");
+      s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+      s = s.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+      // 仅允许 http(s) 链接,挡 javascript: 等
+      s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+        '<a href="$2" target="_blank" rel="noopener">$1</a>');
+      return s;
+    }
+    function renderMarkdown(md) {
+      const lines = escapeHtml(md).split("\n");
+      const out = [];
+      const isTableSep = (l) => l && l.includes("-") && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(l);
+      const splitRow = (l) => l.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim());
+      const isSpecial = (l, next) =>
+        /^```/.test(l) || /^(#{1,6})\s/.test(l) || /^\s*[-*+]\s+/.test(l) ||
+        /^\s*\d+\.\s+/.test(l) || /^\s*(---|\*\*\*|___)\s*$/.test(l) || /^\s*>\s?/.test(l) ||
+        (l.includes("|") && isTableSep(next));
+      let i = 0;
+      while (i < lines.length) {
+        const line = lines[i];
+        let m;
+        if (/^```/.test(line)) {                                   // 代码块
+          const buf = []; i++;
+          while (i < lines.length && !/^```\s*$/.test(lines[i])) { buf.push(lines[i]); i++; }
+          i++;
+          out.push("<pre><code>" + buf.join("\n") + "</code></pre>"); continue;
+        }
+        if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {               // 标题
+          const n = m[1].length; out.push(`<h${n}>` + renderInline(m[2]) + `</h${n}>`); i++; continue;
+        }
+        if (/^\s*(---|\*\*\*|___)\s*$/.test(line)) { out.push("<hr>"); i++; continue; }  // 分隔线
+        if (line.includes("|") && isTableSep(lines[i + 1])) {      // 表格
+          const headers = splitRow(line); i += 2; const rows = [];
+          while (i < lines.length && lines[i].includes("|") && lines[i].trim() !== "") {
+            rows.push(splitRow(lines[i])); i++;
+          }
+          let t = "<table><thead><tr>" + headers.map((c) => "<th>" + renderInline(c) + "</th>").join("") + "</tr></thead><tbody>";
+          for (const r of rows) t += "<tr>" + r.map((c) => "<td>" + renderInline(c) + "</td>").join("") + "</tr>";
+          out.push(t + "</tbody></table>"); continue;
+        }
+        if (/^\s*[-*+]\s+/.test(line)) {                           // 无序列表
+          const items = [];
+          while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
+            items.push("<li>" + renderInline(lines[i].replace(/^\s*[-*+]\s+/, "")) + "</li>"); i++;
+          }
+          out.push("<ul>" + items.join("") + "</ul>"); continue;
+        }
+        if (/^\s*\d+\.\s+/.test(line)) {                           // 有序列表
+          const items = [];
+          while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+            items.push("<li>" + renderInline(lines[i].replace(/^\s*\d+\.\s+/, "")) + "</li>"); i++;
+          }
+          out.push("<ol>" + items.join("") + "</ol>"); continue;
+        }
+        if (/^\s*>\s?/.test(line)) {                               // 引用
+          const buf = [];
+          while (i < lines.length && /^\s*>\s?/.test(lines[i])) { buf.push(lines[i].replace(/^\s*>\s?/, "")); i++; }
+          out.push("<blockquote>" + buf.map(renderInline).join("<br>") + "</blockquote>"); continue;
+        }
+        if (line.trim() === "") { i++; continue; }                 // 空行
+        const para = [];                                           // 段落
+        while (i < lines.length && lines[i].trim() !== "" && !isSpecial(lines[i], lines[i + 1])) {
+          para.push(lines[i]); i++;
+        }
+        out.push("<p>" + para.map(renderInline).join("<br>") + "</p>");
+      }
+      return out.join("");
+    }
+
+    // ---------- ch04:引用角标 [n] → 可点,弹来源浮层(section_path + 原文) ----------
+    let citePop = null;
+    function ensureCitePop() {
+      if (citePop) return citePop;
+      citePop = document.createElement("div");
+      citePop.className = "cite-pop";
+      citePop.hidden = true;
+      document.body.appendChild(citePop);
+      document.addEventListener("click", (e) => {
+        if (citePop.hidden) return;
+        if (!citePop.contains(e.target) && !e.target.classList.contains("cite")) hideCitePop();
+      });
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideCitePop(); });
+      window.addEventListener("resize", hideCitePop);
+      return citePop;
+    }
+    function hideCitePop() { if (citePop) citePop.hidden = true; }
+    function showCitePop(sup, c) {
+      const pop = ensureCitePop();
+      pop.innerHTML =
+        '<div class="cite-pop-path">' + escapeHtml(c.section_path || "来源") + "</div>" +
+        (c.question ? '<div class="cite-pop-q">' + escapeHtml(c.question) + "</div>" : "") +
+        '<div class="cite-pop-a">' + escapeHtml(c.answer || "") + "</div>" +
+        '<div class="cite-pop-meta">来源编号 [' + c.n + "]" +
+        (c.content_type ? " · " + escapeHtml(c.content_type) : "") + "</div>";
+      pop.hidden = false;
+      // 定位:角标下方,超出视口右/下边则回收
+      const r = sup.getBoundingClientRect();
+      const pw = Math.min(320, window.innerWidth - 24);
+      pop.style.width = pw + "px";
+      let left = Math.min(r.left, window.innerWidth - pw - 12);
+      let top = r.bottom + 6;
+      if (top + pop.offsetHeight > window.innerHeight - 12) top = Math.max(12, r.top - pop.offsetHeight - 6);
+      pop.style.left = Math.max(12, left) + "px";
+      pop.style.top = top + "px";
+    }
+    function decorateCitations(container, citations) {
+      const byN = new Map(citations.map((c) => [String(c.n), c]));
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+      const targets = [];
+      let node;
+      while ((node = walker.nextNode())) {
+        if (node.parentElement.classList.contains("cite")) continue;
+        if (/\[\d+\]/.test(node.nodeValue)) targets.push(node);
+      }
+      for (const textNode of targets) {
+        const frag = document.createDocumentFragment();
+        let last = 0;
+        const re = /\[(\d+)\]/g;
+        let m;
+        while ((m = re.exec(textNode.nodeValue))) {
+          const c = byN.get(m[1]);
+          if (!c) continue;  // 非有效编号,保留原文
+          if (m.index > last) frag.appendChild(document.createTextNode(textNode.nodeValue.slice(last, m.index)));
+          const sup = document.createElement("sup");
+          sup.className = "cite";
+          sup.textContent = "[" + m[1] + "]";
+          sup.title = c.section_path || "查看来源";
+          sup.addEventListener("click", (e) => { e.stopPropagation(); showCitePop(sup, c); });
+          frag.appendChild(sup);
+          last = m.index + m[0].length;
+        }
+        if (last > 0) {
+          if (last < textNode.nodeValue.length) frag.appendChild(document.createTextNode(textNode.nodeValue.slice(last)));
+          textNode.parentNode.replaceChild(frag, textNode);
+        }
+      }
+    }
+
+    // ---------- ch04:每段回答满意度反馈(👍/👎,点一次点亮 + 已反馈,一次性)----------
+    function addFeedbackBar(bubble) {
+      if (bubble.querySelector(".feedback")) return;   // 防重复挂
+      const bar = document.createElement("div");
+      bar.className = "feedback";
+      const up = document.createElement("button");
+      up.type = "button"; up.className = "fb-btn"; up.innerHTML = THUMB_UP_SVG;
+      up.setAttribute("aria-label", "这条回答有帮助");
+      const down = document.createElement("button");
+      down.type = "button"; down.className = "fb-btn"; down.innerHTML = THUMB_DOWN_SVG;
+      down.setAttribute("aria-label", "这条回答没帮助");
+      const done = document.createElement("span");
+      done.className = "fb-done"; done.hidden = true; done.textContent = "已反馈,谢谢~";
+      bar.append(up, down, done);
+      // ch09:向上找这条回答之前最近的用户气泡,把该轮用户原话带给后端(👎 落池要用)
+      function userQuestionBefore() {
+        let row = bubble.closest(".row");
+        while (row && (row = row.previousElementSibling)) {
+          if (row.classList && row.classList.contains("user")) {
+            const b = row.querySelector(".bubble");
+            return (b ? b.textContent : row.textContent).trim();
+          }
+        }
+        return "";
+      }
+      function give(chosen, other) {
+        if (bar.dataset.given) return;   // 一次性,点过不再变
+        bar.dataset.given = "1";
+        up.remove(); down.remove();      // 收起两个按钮,只留一句已选择,不再悬在卡片中间
+        done.hidden = false;
+        done.textContent = "已选择 " + (chosen === up ? "👍" : "👎");
+        // ch09:反馈接后端——👎 落低置信度问题池进飞轮,👍 后端只记日志;失败静默,UI 行为不变
+        fetch("/api/feedback", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversation_id: getConversationId(),
+                                 rating: chosen === down ? "down" : "up",
+                                 question: userQuestionBefore() }),
+        }).catch(() => {});
+      }
+      up.addEventListener("click", () => give(up, down));
+      down.addEventListener("click", () => give(down, up));
+      bubble.appendChild(bar);
+    }
+
+    // ---------- ch05:actions 帧 - 转人工值班/建工单两按钮交互 ----------
+    // history=true 表示这批动作是从库里回载的:卡片要等状态拉回来再挂,别演一遍运行态
+    function renderActions(bubble, items, history) {
+      const bar = document.createElement("div");
+      bar.className = "action-bar";
+      for (const a of items) {
+        if (a.type === "select_service") {
+          // ch08:报了接入平台里不存在/没对准的服务被拒,把发现的真实服务列出来点选。拒绝之后得给条出路,
+          // 否则值班同学既查不到,也不知道标准服务名是什么写法
+          renderServiceCards(bubble, a.services || [], pickThenAsk);
+          continue;
+        }
+        if (a.type === "diagnosis_card") {
+          // diagnosis:根因分析进行中卡片——agent 只发起诊断,结论由卡片轮询诊断任务呈现
+          renderDiagnosisCard(bubble, a, history);
+          continue;
+        }
+        if (a.type === "repair_card") {
+          // repair:修复 agent 已派出——进度/回执由卡片轮询修复任务呈现
+          renderRepairAgentCard(bubble, a, history);
+          continue;
+        }
+        if (a.type === "repair_plan") {
+          // 修复计划卡:agent 只生成计划,执行要用户在这里点确认
+          renderRepairPlanCard(bubble, a);
+          continue;
+        }
+        // 转人工值班已下线:这套系统的使用者就是值班的运维本人,没有"转给谁"这回事,
+        // 那个按钮原本也只是前端打印两句话。老会话里存着这个动作的,一并跳过不渲染。
+        if (a.type === "transfer_human") continue;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "action-btn";
+        if (a.type === "create_ticket") {
+          btn.textContent = "建工单";
+          // 点「建工单」不再直接建单,而是弹出工单表单让用户选类别+填描述再提交
+          btn.addEventListener("click", () => openTicketModal(btn));
+        } else if (a.type === "change_form") {
+          btn.textContent = "提交变更申请";
+          // ch06:评估通过时 Agent 调 submit_change 被拦成此动作,点开变更表单(服务只读+类型下拉)
+          btn.addEventListener("click", () => openChangeModal(btn, a.draft || {}));
+        }
+        bar.appendChild(btn);
+      }
+      if (bar.children.length) bubble.appendChild(bar);   // 只有服务卡时不留一条空按钮栏
+    }
+
+    // ---------- diagnosis:根因分析卡片(紧凑版) ----------
+    // 小框常驻气泡里:跑的时候"根因分析中(阶段)…",2s 轮询 GET /api/diagnosis/{id};
+    // 完成后给结论+首要缺口。「查看详情」跳独立大页 /diagnosis/{id}(全链路拓扑+证据链),卡片不再内嵌展开。
+    const DIAG_STAGE_LABEL = { queued: "排队", detect: "检测", collect: "采集", topology: "拓扑",
+                               localize: "定位", attribute: "归因", falsify: "证伪" };
+    const DIAG_VERDICT = {
+      root_cause: { cls: "rc", text: (s) => "根因判定:" + s },
+      critical_failure: { cls: "cf", text: (s) => "关键故障:" + (s || "未知服务") + ",根因服务本身无法进一步解释" },
+      impact: { cls: "inc", text: () => "仅被波及,证据里没有根因" },
+      inconclusive: { cls: "inc", text: () => "证据不足,未定位根因" },
+    };
+
+    /* 修复计划状态 → 药丸样式;与后台同一套口径 */
+    const DIAG_PLAN_LABEL = {
+      awaiting_confirmation: ["warn", "待确认"],
+      approved: ["warn", "已批准"],
+      rejected: ["", "已取消"],
+      preflight: ["warn", "预检查中"],
+      preflight_failed: ["bad", "预检查未通过"],
+      executing: ["warn", "执行中"],
+      execution_failed: ["bad", "执行失败"],
+      execution_unknown: ["warn", "执行状态未知"],
+      verifying: ["warn", "验证中"],
+      succeeded: ["ok", "执行成功 · 验证通过"],
+      verification_failed: ["bad", "执行完成 · 验证未通过"],
+      verification_unknown: ["warn", "执行完成 · 验证不可用"],
+      symptom_resolved: ["ok", "症状已消失 · 未执行"],
+      human_review: ["warn", "已转人工"],
+    };
+
+    /* 计划还"在路上"的状态:这两档卡片要自己轮询(策略自动执行是后台跑的) */
+    const ACTIVE_PLAN_STATUS = ["approved", "preflight", "executing", "verifying"];
+
+    // 卡片终态缓存:刷新时先用它把卡片画成最终样子,再后台刷新。
+    // 只靠"先 fetch 再渲染"还是会有一下空档(卡片晚出现),用户看着还是"卡一下才出来"。
+    const CARD_CACHE_KEY = "opspaw_card_state";
+    function cardCacheGet(k) {
+      try { return JSON.parse(localStorage.getItem(CARD_CACHE_KEY) || "{}")[k] || null; }
+      catch (e) { return null; }
+    }
+    function cardCacheSet(k, v) {
+      try {
+        const all = JSON.parse(localStorage.getItem(CARD_CACHE_KEY) || "{}");
+        all[k] = v;
+        localStorage.setItem(CARD_CACHE_KEY, JSON.stringify(all));
+      } catch (e) { /* 存不下就算了,只是少一次秒开 */ }
+    }
+
+    // 回载历史消息时,先把状态拉回来再挂卡片——否则会先渲染"分析中…"再跳成最终态,
+    // 看起来像诊断又跑了一遍。卡片直接以最终样子出现。
+    function renderDiagnosisCard(bubble, a, history) {
+      if (!history) { mountDiagnosisCard(bubble, a, null, null); return; }
+      // 有缓存:直接按终态画,同时后台拉一次刷新(用户看不到任何过渡)
+      const cached = cardCacheGet("d" + a.diagnosis_id);
+      mountDiagnosisCard(bubble, a, null, cached);
+    }
+
+    function mountDiagnosisCard(bubble, a, pre, cached) {
+      const card = document.createElement("div");
+      card.className = "diag-card";
+      card.innerHTML =
+        '<div class="diag-head">' +
+          '<span class="diag-icon running">🔍</span>' +
+          '<div class="diag-head-txt">' +
+            '<div class="diag-title">根因分析中…</div>' +
+            '<div class="diag-stage">诊断任务已发起(' + (a.service || "自动扫描平台") + '),正在排队</div>' +
+          '</div>' +
+          '<a class="action-btn diag-toggle" href="/diagnosis/' + a.diagnosis_id + '">查看详情</a>' +
+        '</div>';
+      bubble.appendChild(card);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+
+      const iconEl = card.querySelector(".diag-icon");
+      const titleEl = card.querySelector(".diag-title");
+      const stageEl = card.querySelector(".diag-stage");
+      if (cached) {
+        iconEl.textContent = cached.icon || "🐾";
+        iconEl.classList.remove("running");
+        if (cached.cls) titleEl.classList.add(cached.cls);
+        titleEl.textContent = cached.title || "";
+        stageEl.textContent = cached.stage || "";
+      }
+      const foot = document.createElement("div");
+      foot.className = "diag-foot";
+      foot.style.display = "none";
+      card.appendChild(foot);
+
+      let timer = null;
+      let lastData = null;
+      let planState = null;
+      let repairState = null;      // 修复 agent 任务:启动后由修复卡接管进度
+      let repairFetched = false;   // 回放检查只拉一次,不在轮询里反复打
+      let uiKey = "";
+      let planTimer = null;
+
+      function shortTitle(v, svc) {
+        const conf = DIAG_VERDICT[v] || DIAG_VERDICT.inconclusive;
+        return conf.text(svc);
+      }
+
+      function makeBtn(text, onClick) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "action-btn";
+        b.textContent = text;
+        b.addEventListener("click", (ev) => onClick(ev));
+        return b;
+      }
+
+      function hint(text) {
+        const p = document.createElement("p");
+        p.className = "hint";
+        p.textContent = text;
+        return p;
+      }
+
+      function errLine(text) {
+        const e = document.createElement("div");
+        e.className = "err";
+        e.textContent = text;
+        return e;
+      }
+
+      async function call(path, body, method) {
+        const opts = { method: method || (body === undefined ? "GET" : "POST") };
+        if (body !== undefined) {
+          opts.headers = { "Content-Type": "application/json" };
+          opts.body = JSON.stringify(body);
+        }
+        const r = await fetch(path, opts);
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || ("HTTP " + r.status));
+        return data;
+      }
+
+      function renderPlan() {
+        foot.textContent = "";
+        const p = planState;
+        const box = document.createElement("div");
+        box.className = "diag-plan";
+        const kv = document.createElement("div");
+        kv.className = "kv";
+        const t = document.createElement("b");
+        t.textContent = "修复计划 " + p.id;
+        kv.appendChild(t);
+        const st = DIAG_PLAN_LABEL[p.status] || ["", p.status];
+        const tag = document.createElement("span");
+        tag.className = "tag " + st[0];
+        tag.textContent = p.label || p.action;
+        kv.appendChild(tag);
+        const rk = document.createElement("span");
+        rk.className = "tag " + (p.risk === "高" ? "bad" : "warn");
+        rk.textContent = "风险 " + p.risk;
+        kv.appendChild(rk);
+        box.appendChild(kv);
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = "目标 " + p.service + " · 连接器 " + p.connector_id
+          + " · 状态 " + st[1];
+        box.appendChild(meta);
+
+        if (p.auto_started && ACTIVE_PLAN_STATUS.indexOf(p.status) >= 0) {
+          const m = document.createElement("div");
+          m.className = "meta";
+          m.textContent = "按策略自动执行中…(满足动作/形态/证据/症状四项)";
+          box.appendChild(m);
+        } else if ((p.auto_blocked || []).length) {
+          const m = document.createElement("div");
+          m.className = "meta";
+          m.textContent = "未自动执行:" + p.auto_blocked.join(";");
+          box.appendChild(m);
+        }
+
+        if (p.status === "awaiting_confirmation") {
+          const row = document.createElement("div");
+          row.className = "row";
+          row.style.marginTop = "6px";
+          const ok = makeBtn("确认执行", async () => {
+            ok.disabled = true;
+            ok.textContent = "执行中…";
+            let ap = null;
+            try {
+              ap = await call("/api/repair/plans/" + p.id + "/approve", {});
+              const r = await call("/api/repair/plans/" + p.id + "/execute",
+                                   { approval_id: ap.approval_id });
+              planState = Object.assign({}, p, r);
+            } catch (e) {
+              let fresh = null;
+              try { fresh = await call("/api/repair/plans/" + p.id); } catch (_) {}
+              planState = Object.assign({}, p, {
+                status: (fresh && fresh.status) || "execution_failed",
+                error: e.message,
+                execution: fresh && fresh.execution,
+              });
+            }
+            uiKey = "";
+            renderFoot();
+          });
+          const no = makeBtn("取消", async () => {
+            try { await call("/api/repair/plans/" + p.id + "/reject", {}); } catch (e) {}
+            planState = null;
+            uiKey = "";
+            renderFoot();
+          });
+          row.appendChild(ok);
+          row.appendChild(no);
+          box.appendChild(row);
+        } else {
+          if (p.error) box.appendChild(errLine(p.error));
+          const msg = (p.result || {}).message;
+          if (msg) {
+            const m = document.createElement("div");
+            m.className = "meta";
+            m.textContent = "执行:" + msg;
+            box.appendChild(m);
+          }
+          if (p.symptom) {
+            const s = p.symptom;
+            const m = document.createElement("div");
+            m.className = "meta";
+            m.textContent = "执行前复检:" + (s.status === "present"
+              ? "症状仍在(" + (s.dims || []).join("、") + ")"
+              : s.status === "unknown" ? "不可用(" + (s.reason || "") + ")" : "症状已消失");
+            box.appendChild(m);
+          }
+          const v = p.verification;
+          if (v) {
+            const before = (v.before || {}).started_at || "—";
+            const after = (v.after || {}).started_at || "—";
+            const m = document.createElement("div");
+            m.className = "meta";
+            m.textContent = "验证:" + (v.status === "verified" ? "通过"
+              : v.status === "failed" ? "未通过" : "不可用")
+              + (v.mode === "running_after" ? "(启动时间 " + before + " → " + after + ")" : "")
+              + (v.reason ? " · " + v.reason : "");
+            box.appendChild(m);
+          }
+          if (p.ticket_no) {
+            const m = document.createElement("div");
+            m.className = "meta";
+            m.textContent = "已建工单:" + p.ticket_no;
+            box.appendChild(m);
+          }
+          const row = document.createElement("div");
+          row.className = "row";
+          row.style.marginTop = "6px";
+          const failed = ["verification_failed", "verification_unknown",
+                          "execution_failed", "execution_unknown"].indexOf(p.status) >= 0;
+          if (failed) {
+            row.appendChild(makeBtn("转人工", async () => {
+              try {
+                const r = await call("/api/repair/plans/" + p.id + "/handoff", {});
+                planState = Object.assign({}, p, { status: r.status, ticket_no: r.ticket_no });
+              } catch (e) {
+                planState = Object.assign({}, p, { error: e.message });
+              }
+              uiKey = "";
+              renderFoot();
+            }));
+          }
+          row.appendChild(makeBtn("关闭", () => {
+            planState = null;
+            uiKey = "";
+            renderFoot();
+          }));
+          box.appendChild(row);
+        }
+        foot.appendChild(box);
+        if (ACTIVE_PLAN_STATUS.indexOf(p.status) >= 0) schedulePlanPoll();
+      }
+
+      /* 策略自动执行在后台跑:卡片自己 2s 拉一次状态,拉到终态就停 */
+      function schedulePlanPoll() {
+        if (planTimer) return;
+        planTimer = setTimeout(async () => {
+          planTimer = null;
+          if (!planState) return;
+          try {
+            const fresh = await call("/api/repair/plans/" + planState.id);
+            planState = Object.assign({}, planState, fresh);
+          } catch (e) { /* 网络抖动下一轮再拉 */ }
+          uiKey = "";
+          renderFoot();
+        }, 2000);
+      }
+
+      function renderFoot() {
+        const d = lastData;
+        if (!d || d.status !== "done") { foot.style.display = "none"; return; }
+        foot.style.display = "block";
+        const res = d.result || {};
+        const conf = d.confirmation || "pending";
+        const key = [d.id, conf, planState && planState.id, planState && planState.status,
+                     planState && planState.ticket_no].join("|");
+        if (key === uiKey) return;
+        uiKey = key;
+
+        if (res.verdict !== "root_cause" && res.verdict !== "critical_failure") {
+          foot.textContent = "";
+          foot.appendChild(hint("结论不是根因,不提供自动修复;可以补充信息后重新诊断,或转人工。"));
+          return;
+        }
+        if (repairState) {
+          // 修复卡已经在下方滚动/回执,这里不再放一行悬空解说——诊断卡到此为止
+          foot.style.display = "none";
+          return;
+        }
+        if (planState) { renderPlan(); return; }
+
+        foot.textContent = "";
+        if (conf === "pending") {
+          foot.appendChild(hint("确认这个根因吗?确认后才会出现修复入口。"));
+          const row = document.createElement("div");
+          row.className = "row";
+          row.appendChild(makeBtn("确认根因", async () => {
+            try {
+              await call("/api/diagnosis/" + a.diagnosis_id + "/confirm", { confirmed: true });
+              lastData.confirmation = "confirmed";
+              uiKey = "";
+              renderFoot();
+            } catch (e) { foot.appendChild(errLine(e.message)); }
+          }));
+          row.appendChild(makeBtn("根因不对", async () => {
+            try {
+              await call("/api/diagnosis/" + a.diagnosis_id + "/confirm", { confirmed: false });
+              lastData.confirmation = "rejected";
+              uiKey = "";
+              renderFoot();
+            } catch (e) { foot.appendChild(errLine(e.message)); }
+          }));
+          foot.appendChild(row);
+          return;
+        }
+        if (conf === "rejected") {
+          foot.appendChild(hint("已标记根因不对。可以补充现象重新诊断,系统不会用这个结论启动修复。"));
+          return;
+        }
+        foot.appendChild(hint("根因已确认。申请自动修复后,修复 agent 会亲自复核现场、决定修复动作、执行后再确认结果,全程在这张修复卡上实时滚动。"));
+        const row = document.createElement("div");
+        row.className = "row";
+        row.appendChild(makeBtn("申请自动修复", async (ev) => {
+          // 即时反馈:按钮进入 loading,修复 agent 启动后由修复卡接管进度展示
+          const clicked = ev.currentTarget;
+          if (clicked.disabled) return;
+          clicked.disabled = true;
+          clicked.textContent = "正在启动修复 agent…";
+          const wait = hint("修复 agent 正在接管,约 1-3 分钟(复核现场 → 修复 → 确认结果 → 写回执)…");
+          foot.appendChild(wait);
+          try {
+            const p = await call("/api/diagnosis/" + a.diagnosis_id + "/repair/run", {});
+            repairState = { repair_id: p.repair_id };
+            renderRepairAgentCard(bubble, repairState);
+            uiKey = "";
+            renderFoot();
+          } catch (e) {
+            wait.remove();
+            clicked.disabled = false;
+            clicked.textContent = "申请自动修复";
+            foot.appendChild(errLine(e.message));
+          }
+        }));
+        row.appendChild(makeBtn("人工处理", () => {
+          foot.textContent = "";
+          foot.appendChild(hint("已标记人工处理。完整诊断报告在「查看详情」里,修复由人工执行。"));
+        }));
+        foot.appendChild(row);
+      }
+
+      async function poll(pre) {
+        let d = pre || null;
+        if (!d) {
+          try {
+            const r = await fetch("/api/diagnosis/" + a.diagnosis_id);
+            d = await r.json();
+          } catch (e) { return; }   // 网络抖动下一轮再拉,卡片不报错不打断
+        }
+        if (d.error) {
+          stop();
+          iconEl.textContent = "⚠️"; iconEl.classList.remove("running");
+          titleEl.textContent = "诊断任务丢失";
+          stageEl.textContent = d.error;
+          return;
+        }
+        lastData = d;
+        const last = (d.events || [])[d.events.length - 1];
+        if (last) stageEl.textContent = last.detail;
+        if (d.status === "running") {
+          titleEl.textContent = "根因分析中(" + (DIAG_STAGE_LABEL[d.stage] || d.stage) + ")…";
+          return;
+        }
+        stop();
+        // verdict/root_cause 在 result 里,不在 run 顶层——顶层读会永远 fallback 到"证据不足"
+        const res = d.result || {};
+        iconEl.textContent = d.status === "failed" ? "💥" : "🐾";
+        iconEl.classList.remove("running");
+        titleEl.classList.add(d.status === "failed" ? "warn" : ((DIAG_VERDICT[res.verdict] || {}).cls === "rc" ? "ok" : "warn"));
+        titleEl.textContent = d.status === "failed" ? "诊断失败" : "诊断完成 · " + shortTitle(res.verdict, res.root_cause_service);
+        if (d.status === "done") {
+          // 副行不再复读标题(标题已经说了根因判定),说下一步:等确认/已确认/已否认 + 首要缺口
+          const miss = (res.missing || [])[0];
+          const confTxt = d.confirmation === "confirmed" ? "根因已确认"
+            : d.confirmation === "rejected" ? "已标记根因不对" : "等你确认根因";
+          stageEl.textContent = confTxt + (miss ? " · 首要缺口:" + miss : "");
+          cardCacheSet("d" + a.diagnosis_id, {
+            icon: iconEl.textContent, title: titleEl.textContent,
+            stage: stageEl.textContent,
+            cls: titleEl.classList.contains("ok") ? "ok" : "warn",
+          });
+          // 回放恢复:刷新/跨天后修复卡不丢——按诊断单查最近一次修复任务,有就补渲染
+          if (!repairFetched && d.confirmation === "confirmed") {
+            repairFetched = true;
+            fetch("/api/repair/runs/by-diagnosis/" + a.diagnosis_id)
+              .then((r) => r.json())
+              .then((j) => {
+                if (j.repair && j.repair.id) {
+                  repairState = { repair_id: j.repair.id };
+                  renderRepairAgentCard(bubble, repairState, true);
+                  uiKey = "";
+                  renderFoot();
+                }
+              })
+              .catch(() => {});
+          }
+        }
+        renderFoot();
+      }
+      function stop() { if (timer) { clearInterval(timer); timer = null; } }
+      timer = setInterval(poll, 2000);
+      poll(pre);
+    }
+
+    // ---------- repair:修复 agent 卡片(紧凑版) ----------
+    // 修复 agent 接手归因卡片后的进度卡:复核现场 → 修复执行 → 确认结果 → 写回执,
+    // 2s 轮询 GET /api/repair/runs/{id};完成后给终态结论,「查看详情」跳 /repair/{id} 大页。
+    const REPAIR_STAGE_LABEL = { scene: "复核现场", fix: "修复执行", verify: "确认结果", report: "写回执" };
+    const REPAIR_VERDICT = {
+      succeeded: { cls: "ok", text: () => "修复完成 · 验证通过" },
+      symptom_resolved: { cls: "warn", text: () => "症状已消失 · 未执行修复" },
+      verification_failed: { cls: "warn", text: () => "修复未生效 · 建议转人工" },
+      verification_unknown: { cls: "warn", text: () => "修复已执行 · 结果无法确认" },
+      execution_failed: { cls: "warn", text: () => "执行失败" },
+      execution_unknown: { cls: "warn", text: () => "执行状态未知" },
+      failed: { cls: "warn", text: () => "修复 agent 异常" },
+    };
+
+    function renderRepairAgentCard(bubble, a, history) {
+      if (!history) { mountRepairCard(bubble, a, null, null); return; }
+      mountRepairCard(bubble, a, null, cardCacheGet("r" + a.repair_id));
+    }
+
+    function mountRepairCard(bubble, a, pre, cached) {
+      // 同一单修复只渲染一张卡:回放轮询和按钮点击可能都触发
+      if (bubble.querySelector('[data-repair-card="' + a.repair_id + '"]')) return;
+      const card = document.createElement("div");
+      card.className = "diag-card";
+      card.setAttribute("data-repair-card", a.repair_id);
+      card.innerHTML =
+        '<div class="diag-head">' +
+          '<span class="diag-icon running">🔧</span>' +
+          '<div class="diag-head-txt">' +
+            '<div class="diag-title">修复 agent 接手中…</div>' +
+            '<div class="diag-stage">正在复核现场(指标复检 + 连接器实查)…</div>' +
+          '</div>' +
+          '<a class="action-btn diag-toggle" href="/repair/' + a.repair_id + '">查看详情</a>' +
+        '</div>';
+      bubble.appendChild(card);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+
+      const iconEl = card.querySelector(".diag-icon");
+      const titleEl = card.querySelector(".diag-title");
+      const stageEl = card.querySelector(".diag-stage");
+      if (cached) {
+        iconEl.textContent = cached.icon || "🔧";
+        iconEl.classList.remove("running");
+        if (cached.cls) titleEl.classList.add(cached.cls);
+        titleEl.textContent = cached.title || "";
+        stageEl.textContent = cached.stage || "";
+      }
+
+      async function poll(pre) {
+        let d = pre || null;
+        if (!d) {
+          try {
+            const r = await fetch("/api/repair/runs/" + a.repair_id);
+            d = await r.json();
+          } catch (e) { return; }
+        }
+        if (d.error) {
+          stop();
+          iconEl.textContent = "⚠️"; iconEl.classList.remove("running");
+          titleEl.textContent = "修复任务丢失";
+          stageEl.textContent = d.error;
+          return;
+        }
+        const last = (d.events || [])[d.events.length - 1];
+        if (last) stageEl.textContent = last.detail;
+        if (d.status === "running") {
+          titleEl.textContent = "修复进行中(" + (REPAIR_STAGE_LABEL[d.stage] || d.stage) + ")…";
+          return;
+        }
+        stop();
+        const res = d.result || {};
+        const v = REPAIR_VERDICT[res.verdict] || REPAIR_VERDICT.failed;
+        iconEl.textContent = d.status === "failed" ? "💥" : (res.verdict === "succeeded" ? "✅" : "⚠️");
+        iconEl.classList.remove("running");
+        titleEl.classList.add(v.cls === "ok" ? "ok" : "warn");
+        titleEl.textContent = d.status === "failed" ? "修复 agent 异常" : "修复回执 · " + v.text();
+        const op = (res.report || {}).opinion;
+        if (op) stageEl.textContent = op;
+        cardCacheSet("r" + a.repair_id, {
+          icon: iconEl.textContent, title: titleEl.textContent,
+          stage: stageEl.textContent,
+          cls: titleEl.classList.contains("ok") ? "ok" : "warn",
+        });
+      }
+      function stop() { if (timer) { clearInterval(timer); timer = null; } }
+      let timer = setInterval(poll, 2000);
+      poll();
+    }
+
+    /* 对话里的修复计划卡:Agent 只能生成计划,执行必须在这里点确认。
+       状态从 /api/repair/plans/{id} 现拉,历史回放也能恢复。 */
+    function renderRepairPlanCard(bubble, a) {
+      const card = document.createElement("div");
+      card.className = "diag-card";
+      card.innerHTML =
+        '<div class="diag-head">' +
+          '<span class="diag-icon">🛠</span>' +
+          '<div class="diag-head-txt">' +
+            '<div class="diag-title">修复计划 ' + a.plan_id + '</div>' +
+            '<div class="diag-stage">正在读取计划状态…</div>' +
+          '</div>' +
+        '</div>';
+      bubble.appendChild(card);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+
+      const stageEl = card.querySelector(".diag-stage");
+      const body = document.createElement("div");
+      body.className = "diag-foot";
+      card.appendChild(body);
+      let plan = null;
+
+      async function call(path, payload) {
+        const opts = { method: payload === undefined ? "GET" : "POST" };
+        if (payload !== undefined) {
+          opts.headers = { "Content-Type": "application/json" };
+          opts.body = JSON.stringify(payload);
+        }
+        const r = await fetch(path, opts);
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || ("HTTP " + r.status));
+        return data;
+      }
+
+      function btn(text, onClick) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "action-btn";
+        b.textContent = text;
+        b.addEventListener("click", onClick);
+        return b;
+      }
+
+      function paint() {
+        const st = DIAG_PLAN_LABEL[plan.status] || ["", plan.status];
+        stageEl.textContent = st[1];
+        body.textContent = "";
+        const box = document.createElement("div");
+        box.className = "diag-plan";
+        const kv = document.createElement("div");
+        kv.className = "kv";
+        const tag = document.createElement("span");
+        tag.className = "tag " + st[0];
+        tag.textContent = plan.label || plan.action;
+        kv.appendChild(tag);
+        const rk = document.createElement("span");
+        rk.className = "tag " + (plan.risk === "高" ? "bad" : "warn");
+        rk.textContent = "风险 " + plan.risk;
+        kv.appendChild(rk);
+        box.appendChild(kv);
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = "目标 " + plan.service + " · 连接器 " + plan.connector_id;
+        box.appendChild(meta);
+        if (plan.reason) {
+          const detail = document.createElement("div");
+          detail.className = "meta";
+          detail.textContent = "决策依据:" + plan.reason;
+          box.appendChild(detail);
+        }
+        if (plan.params && Object.keys(plan.params).length) {
+          const detail = document.createElement("div");
+          detail.className = "meta";
+          detail.textContent = "审批绑定参数:" + JSON.stringify(plan.params);
+          box.appendChild(detail);
+        }
+        if (plan.desc) {
+          const detail = document.createElement("div");
+          detail.className = "meta";
+          detail.textContent = plan.desc;
+          box.appendChild(detail);
+        }
+
+        if (plan.auto_started && ACTIVE_PLAN_STATUS.indexOf(plan.status) >= 0) {
+          const m = document.createElement("div");
+          m.className = "meta";
+          m.textContent = "按策略自动执行中…(满足动作/形态/证据/症状四项)";
+          box.appendChild(m);
+        } else if ((plan.auto_blocked || []).length) {
+          const m = document.createElement("div");
+          m.className = "meta";
+          m.textContent = "未自动执行:" + plan.auto_blocked.join(";");
+          box.appendChild(m);
+        }
+
+        if (plan.status === "awaiting_confirmation") {
+          const row = document.createElement("div");
+          row.className = "row";
+          row.style.marginTop = "6px";
+          const ok = btn("确认执行", async () => {
+            ok.disabled = true;
+            ok.textContent = "执行中…";
+            try {
+              const ap = await call("/api/repair/plans/" + plan.id + "/approve", {});
+              const r = await call("/api/repair/plans/" + plan.id + "/execute",
+                                   { approval_id: ap.approval_id });
+              plan = Object.assign({}, plan, r);
+            } catch (e) {
+              try { plan = await call("/api/repair/plans/" + plan.id); } catch (_) {}
+              plan = Object.assign({}, plan || {}, { error: e.message });
+            }
+            paint();
+          });
+          const no = btn("取消", async () => {
+            try { await call("/api/repair/plans/" + plan.id + "/reject", {}); } catch (e) {}
+            plan = Object.assign({}, plan, { status: "rejected" });
+            paint();
+          });
+          row.appendChild(ok);
+          row.appendChild(no);
+          box.appendChild(row);
+        } else {
+          if (plan.error) {
+            const e = document.createElement("div");
+            e.className = "err";
+            e.textContent = plan.error;
+            box.appendChild(e);
+          }
+          const msg = (plan.result || {}).message;
+          if (msg) {
+            const m = document.createElement("div");
+            m.className = "meta";
+            m.textContent = "执行:" + msg;
+            box.appendChild(m);
+          }
+          if (plan.symptom) {
+            const s = plan.symptom;
+            const m = document.createElement("div");
+            m.className = "meta";
+            m.textContent = "执行前复检:" + (s.status === "present"
+              ? "症状仍在(" + (s.dims || []).join("、") + ")"
+              : s.status === "unknown" ? "不可用(" + (s.reason || "") + ")" : "症状已消失");
+            box.appendChild(m);
+          }
+          const v = plan.verification;
+          if (v) {
+            const m = document.createElement("div");
+            m.className = "meta";
+            m.textContent = "验证:" + (v.status === "verified" ? "通过"
+              : v.status === "failed" ? "未通过" : "不可用")
+              + (v.reason ? " · " + v.reason : "");
+            box.appendChild(m);
+            // 修复依据:执行前后容器状态实查对比(独立复检,不信连接器自报成功)
+            const st = (x) => !x || x.running === undefined ? "未知"
+              : x.running ? "运行中" + (x.started_at
+                ? "(启动于 " + String(x.started_at).replace("T", " ").slice(0, 19) + " UTC)" : "")
+              : "未运行";
+            const b = v.before || {}, aft = v.after || {};
+            if (b.running !== undefined || aft.running !== undefined) {
+              const m2 = document.createElement("div");
+              m2.className = "meta";
+              m2.textContent = "修复依据:执行前 " + st(b) + " → 执行后 " + st(aft)
+                + (aft.health ? ",健康检查 " + aft.health : "");
+              box.appendChild(m2);
+            }
+            const ps = v.post_symptom;
+            if (ps) {
+              const m3 = document.createElement("div");
+              m3.className = "meta";
+              m3.textContent = "修复后观测:" + (ps.status === "resolved"
+                ? "指标已回到自身历史范围,业务恢复"
+                : ps.status === "present"
+                ? "仍有异常维(" + (ps.dims || []).join("、") + ")——重启成功不代表故障治本,建议继续排查"
+                : (ps.reason || "指标尚未回流") + ";稍后可复跑诊断确认业务恢复");
+              box.appendChild(m3);
+            }
+          }
+          if (plan.ticket_no) {
+            const m = document.createElement("div");
+            m.className = "meta";
+            m.textContent = "已建工单:" + plan.ticket_no;
+            box.appendChild(m);
+          }
+          const failed = ["verification_failed", "verification_unknown",
+                          "execution_failed", "execution_unknown"].indexOf(plan.status) >= 0;
+          if (failed) {
+            const row = document.createElement("div");
+            row.className = "row";
+            row.style.marginTop = "6px";
+            row.appendChild(btn("转人工", async () => {
+              try {
+                const r = await call("/api/repair/plans/" + plan.id + "/handoff", {});
+                plan = Object.assign({}, plan, { status: r.status, ticket_no: r.ticket_no });
+              } catch (e) {
+                plan = Object.assign({}, plan, { error: e.message });
+              }
+              paint();
+            }));
+            box.appendChild(row);
+          }
+        }
+        body.appendChild(box);
+        if (ACTIVE_PLAN_STATUS.indexOf(plan.status) >= 0) {
+          setTimeout(async () => {
+            try { plan = await call("/api/repair/plans/" + plan.id); } catch (e) {}
+            paint();
+          }, 2000);
+        }
+      }
+
+      (async () => {
+        try {
+          plan = await call("/api/repair/plans/" + a.plan_id);
+          paint();
+        } catch (e) {
+          stageEl.textContent = "计划读取失败:" + e.message;
+        }
+      })();
+    }
+
+    // ---------- ch05:建工单表单弹窗控制 ----------
+    const ticketMask = document.getElementById("ticketMask");
+    const ticketType = document.getElementById("ticketType");
+    const ticketDesc = document.getElementById("ticketDesc");
+    const ticketErr = document.getElementById("ticketErr");
+    const ticketSubmit = document.getElementById("ticketSubmit");
+    const ticketCancel = document.getElementById("ticketCancel");
+    let ticketTriggerBtn = null;  // 记住是哪个「建工单」按钮触发的,成功后置灰它
+
+    function openTicketModal(triggerBtn) {
+      ticketTriggerBtn = triggerBtn;
+      ticketType.value = "";          // 不预选,强制用户选
+      ticketDesc.value = "";          // 留空,用户自己写
+      ticketErr.textContent = "";
+      ticketSubmit.disabled = false;
+      ticketSubmit.textContent = "提交工单";
+      ticketMask.classList.add("open");
+      ticketDesc.focus();
+    }
+    function closeTicketModal() {
+      ticketMask.classList.remove("open");
+      ticketTriggerBtn = null;
+    }
+
+    ticketCancel.addEventListener("click", closeTicketModal);
+    // 点遮罩空白处 / Esc 关闭(取消不建单,建工单按钮保持可用可重开)
+    ticketMask.addEventListener("click", (e) => { if (e.target === ticketMask) closeTicketModal(); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && ticketMask.classList.contains("open")) closeTicketModal();
+    });
+
+    ticketSubmit.addEventListener("click", async () => {
+      const type = ticketType.value;
+      const desc = ticketDesc.value.trim();
+      if (!type) { ticketErr.textContent = "请选择反馈类别"; return; }
+      if (!desc) { ticketErr.textContent = "请填写反馈描述"; ticketDesc.focus(); return; }
+      ticketErr.textContent = "";
+      ticketSubmit.disabled = true;
+      ticketSubmit.textContent = "提交中…";
+      try {
+        const resp = await fetch("/api/actions/create-ticket", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversation_id: getConversationId(),
+            description: desc,
+            ticket_type: type,
+          }),
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+          if (ticketTriggerBtn) ticketTriggerBtn.disabled = true;  // 建成后该气泡的按钮置灰
+          closeTicketModal();
+          addRow("bot").textContent = "工单已创建:" + data.ticket_no;
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        } else {
+          ticketErr.textContent = "工单创建失败,请稍后重试";
+          ticketSubmit.disabled = false;
+          ticketSubmit.textContent = "提交工单";
+        }
+      } catch (e) {
+        ticketErr.textContent = "工单创建失败,请稍后重试";
+        ticketSubmit.disabled = false;
+        ticketSubmit.textContent = "提交工单";
+      }
+    });
+
+    // ---------- ch06:变更表单弹窗控制(服务只读 + 固定类目类型下拉)----------
+    const changeMask = document.getElementById("changeMask");
+    const changeService = document.getElementById("changeService");
+    const changeType = document.getElementById("changeType");
+    const changeErr = document.getElementById("changeErr");
+    const changeSubmit = document.getElementById("changeSubmit");
+    const changeCancel = document.getElementById("changeCancel");
+    let changeTriggerBtn = null;
+
+    function openChangeModal(triggerBtn, draft) {
+      changeTriggerBtn = triggerBtn;
+      changeService.value = (draft && draft.service_id) || "";
+      changeType.value = "";
+      changeErr.textContent = "";
+      changeSubmit.disabled = false;
+      changeSubmit.textContent = "提交变更";
+      changeMask.classList.add("open");
+    }
+    function closeChangeModal() { changeMask.classList.remove("open"); changeTriggerBtn = null; }
+    changeCancel.addEventListener("click", closeChangeModal);
+    changeMask.addEventListener("click", (e) => { if (e.target === changeMask) closeChangeModal(); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && changeMask.classList.contains("open")) closeChangeModal();
+    });
+    changeSubmit.addEventListener("click", async () => {
+      const ctype = changeType.value;
+      if (!ctype) { changeErr.textContent = "请选择变更类型"; return; }
+      changeErr.textContent = "";
+      changeSubmit.disabled = true;
+      changeSubmit.textContent = "提交中…";
+      try {
+        const resp = await fetch("/api/actions/create-change", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversation_id: getConversationId(),
+            service_id: changeService.value, change_type: ctype }),
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+          if (changeTriggerBtn) changeTriggerBtn.disabled = true;
+          closeChangeModal();
+          addRow("bot").textContent = "变更申请已提交:" + data.ticket_no;
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        } else {
+          changeErr.textContent = "变更提交失败,请稍后重试";
+          changeSubmit.disabled = false;
+          changeSubmit.textContent = "提交变更";
+        }
+      } catch (e) {
+        changeErr.textContent = "变更提交失败,请稍后重试";
+        changeSubmit.disabled = false;
+        changeSubmit.textContent = "提交变更";
+      }
+    });
+
+    // ---------- 通用确认弹窗(替代原生 confirm,风格与工单/变更弹窗统一) ----------
+    const confirmMask = document.getElementById("confirmMask");
+    const confirmText = document.getElementById("confirmText");
+    const confirmOk = document.getElementById("confirmOk");
+    const confirmCancel = document.getElementById("confirmCancel");
+    let confirmResolve = null;   // 同一时刻只可能有一个待决确认,promise resolver 复用
+    function confirmDialog(text, okLabel = "确认") {
+      confirmText.textContent = text;
+      confirmOk.textContent = okLabel;
+      confirmMask.classList.add("open");
+      confirmOk.focus();
+      return new Promise((resolve) => { confirmResolve = resolve; });
+    }
+    function settleConfirm(v) {
+      if (!confirmMask.classList.contains("open")) return;
+      confirmMask.classList.remove("open");
+      if (confirmResolve) { confirmResolve(v); confirmResolve = null; }
+    }
+    confirmOk.addEventListener("click", () => settleConfirm(true));
+    confirmCancel.addEventListener("click", () => settleConfirm(false));
+    confirmMask.addEventListener("click", (e) => { if (e.target === confirmMask) settleConfirm(false); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && confirmMask.classList.contains("open")) settleConfirm(false);
+    });
+
+    // ---------- ch06:服务选择器卡片(interrupt 未锁定服务名 → 聊天流点选 → resume 续跑)----------
+    // onPick 决定点完卡片干什么:ch06 是 resume 把图续跑下去;ch08 归属校验拒绝之后
+    // 没有待续跑的图,点了就当用户重新问一句(见 pickThenAsk)。卡片长相只此一份。
+    function renderServiceCards(bubble, services, onPick) {
+      const intro = document.createElement("div");
+      intro.className = "bubble-text";
+      intro.textContent = services.length ? "请选择您要处理的服务:" : "接入平台里暂时没有发现服务,请检查后台「服务检测」的接入配置。";
+      bubble.appendChild(intro);
+      const wrap = document.createElement("div");
+      wrap.className = "order-cards";
+      for (const o of services) {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "order-card";
+        card.innerHTML =
+          '<div class="oc-top">' + (o.name || o.service_id) +
+            (o.ambiguous ? " ⚠ 多平台同名" : "") + '</div>' +
+          '<div class="oc-mid">' + (o.target ? "平台:" + o.target : "") + '</div>' +
+          '<div class="oc-bot">' + (o.status || "状态待查询") +
+          ((o.instances != null) ? ' · ' + o.instances + ' 实例' : "") + '</div>';
+        card.addEventListener("click", async () => {
+          wrap.querySelectorAll(".order-card").forEach((c) => (c.disabled = true));
+          card.classList.add("picked");
+          await (onPick || pickThenResume)(o);
+        });
+        wrap.appendChild(card);
+      }
+      bubble.appendChild(wrap);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    // ch06:点完续跑图(有 interrupt 挂着)
+    async function pickThenResume(o) {
+      // 服务身份是"平台+服务名":多平台同名时必须把全名回传,裸名会被后端拒绝(绝不猜平台)
+      const sid = o.ambiguous ? o.key : o.service_id;
+      addRow("user").textContent = "选择服务 " + sid;
+      const nb = addRow("bot");
+      setBusy(true);
+      try {
+        await streamInto(nb, () => fetch("/api/actions/resume", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversation_id: getConversationId(), service_id: sid }),
+        }));
+      } catch (e) {
+        nb.className = "bubble error";
+        nb.textContent = "续跑失败,请稍后重试";
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    // ch08:归属校验拒绝之后给的出路。这轮已经答完了,没有图等着续跑,所以走正常发消息那条路
+    async function pickThenAsk(o) {
+      await send("查一下服务 " + o.service_id);
+    }
+
+    // 告警接入预览卡:和工单卡同一套交互(interrupt → 确认/取消 → resume 续跑)。
+    // 没有这张卡的话,写操作会被引擎按"权限拒绝"挡掉,用户没有任何地方能点确认。
+    function renderIntakeConfirm(bubble, pv) {
+      const intro = document.createElement("div");
+      intro.className = "bubble-text";
+      intro.textContent = (pv.op === "delete") ? "确认删除这条告警接入?"
+                        : (pv.op === "update") ? "确认修改这条告警接入?" : "请确认这条告警接入:";
+      bubble.appendChild(intro);
+
+      const op = pv.op || "create";
+      const svc = (pv.services || []).length ? pv.services.join("、") : "全部服务(平台自动找)";
+      const dims = (pv.checks || []).length ? pv.checks.join("、") : "全维度";
+      let when = "未开定时";
+      if (pv.cron) when = "cron " + pv.cron;
+      else if (pv.daily_at) when = "每天 " + pv.daily_at;
+      else if (pv.schedule_minutes > 0) when = "每 " + pv.schedule_minutes + " 分钟";
+      const after = [pv.auto_repair ? "自动修复" : "", pv.forward_url ? "转发到 " + pv.forward_url : ""]
+        .filter(Boolean).join(" + ") || "只诊断";
+      const thr = (pv.threshold_metric && pv.threshold_value > 0)
+        ? pv.threshold_metric + " > " + pv.threshold_value : "未设阈值";
+
+      const card = document.createElement("div");
+      card.className = "ticket-confirm";
+      const row = (k, v) => '<div class="tc-row"><span class="tc-label">' + k +
+                            "</span><span>" + escapeHtml(String(v)) + "</span></div>";
+      let html;
+      if (op === "delete") {
+        html = '<div class="tc-title">🗑 删除告警接入</div>' +
+               row("名称", pv.name || "") +
+               row("提醒", "删除后不可恢复,webhook 地址同时失效");
+      } else if (op === "update") {
+        const ch = [];
+        if (pv.enabled === true) ch.push("启用");
+        if (pv.enabled === false) ch.push("停用");
+        if (pv.daily_at) ch.push("改成每天 " + pv.daily_at);
+        if (pv.interval_min > 0) ch.push("改成每 " + pv.interval_min + " 分钟");
+        if (pv.silence_minutes > 0) ch.push("静默期 " + pv.silence_minutes + " 分钟");
+        html = '<div class="tc-title">✏️ 修改告警接入</div>' +
+               row("名称", pv.name || "") +
+               row("改动", ch.join(";") || "(未指定)");
+      } else {
+        html = '<div class="tc-title">🔔 告警接入预览</div>' +
+               row("名称", pv.name || "") +
+               row("范围", svc) +
+               row("定时", when) +
+               row("关注", dims) +
+               row("阈值", thr) +
+               row("之后", after) +
+               row("静默", (pv.silence_minutes || 15) + " 分钟");
+      }
+      card.innerHTML = html;
+
+      const btns = document.createElement("div");
+      btns.className = "tc-btns";
+      const mk = (text, confirmed, extraClass) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "action-btn" + (extraClass ? " " + extraClass : "");
+        btn.textContent = text;
+        btn.addEventListener("click", async () => {
+          btns.querySelectorAll("button").forEach((b) => (b.disabled = true));
+          card.classList.add("decided");
+          addRow("user").textContent = confirmed ? (pv.op === "delete" ? "确认删除"
+            : pv.op === "update" ? "确认修改" : "确认创建") : "取消";
+          const nb = addRow("bot");
+          setBusy(true);
+          try {
+            await streamInto(nb, () => fetch("/api/actions/resume", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ conversation_id: getConversationId(), confirmed }),
+            }));
+          } catch (e) {
+            nb.className = "bubble error";
+            nb.textContent = "续跑失败,请稍后重试";
+          } finally {
+            setBusy(false);
+          }
+        });
+        return btn;
+      };
+      btns.appendChild(mk(op === "delete" ? "确认删除" : op === "update" ? "确认修改" : "确认创建", true));
+      btns.appendChild(mk("取消", false, "tc-cancel"));
+      card.appendChild(btns);
+      bubble.appendChild(card);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    // ---------- ch08:工单预览确认卡(interrupt confirm_ticket → 确认提交/取消 → resume 续跑)----------
+    function renderTicketConfirm(bubble, preview) {
+      const intro = document.createElement("div");
+      intro.className = "bubble-text";
+      intro.textContent = "请确认工单信息:";
+      bubble.appendChild(intro);
+      const card = document.createElement("div");
+      card.className = "ticket-confirm";
+      card.innerHTML =
+        '<div class="tc-title">📋 工单预览</div>' +
+        '<div class="tc-row"><span class="tc-label">工单类型</span><span>' + escapeHtml(preview.ticket_type || "咨询") + "</span></div>" +
+        '<div class="tc-row"><span class="tc-label">问题描述</span><span>' + escapeHtml(preview.description || "") + "</span></div>";
+      const btns = document.createElement("div");
+      btns.className = "tc-btns";
+      const mk = (text, confirmed, extraClass) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "action-btn" + (extraClass ? " " + extraClass : "");
+        btn.textContent = text;
+        btn.addEventListener("click", async () => {
+          btns.querySelectorAll("button").forEach((b) => (b.disabled = true));
+          card.classList.add("decided");
+          addRow("user").textContent = confirmed ? "确认提交工单" : "取消建单";
+          const nb = addRow("bot");
+          setBusy(true);
+          try {
+            await streamInto(nb, () => fetch("/api/actions/resume", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ conversation_id: getConversationId(), confirmed }),
+            }));
+          } catch (e) {
+            nb.className = "bubble error";
+            nb.textContent = "续跑失败,请稍后重试";
+          } finally {
+            setBusy(false);
+          }
+        });
+        return btn;
+      };
+      btns.appendChild(mk("确认提交", true));
+      btns.appendChild(mk("取消", false, "tc-cancel"));
+      card.appendChild(btns);
+      bubble.appendChild(card);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    // 读一条 SSE 流,按帧分发到 on.{delta,tool,citations,actions,interrupt};done 存 conversation_id;event: error 抛错
+    async function readSSEStream(resp, on) {
+      if (!resp.ok || !resp.body) throw new Error("bad response");
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() ?? "";
+        for (const frame of frames) {
+          if (frame.startsWith("event: error")) throw new Error("stream error");
+          const line = frame.split("\n").find((l) => l.startsWith("data: "));
+          if (!line) continue;
+          const payload = line.slice(6);
+          if (payload === "[DONE]") return;
+          const data = JSON.parse(payload);
+          if (data.event === "tool") on.tool && on.tool(data.name);
+          else if (data.event === "citations") on.citations && on.citations(data.items || []);
+          else if (data.event === "interrupt") {
+            if (data.conversation_id) setConversationId(data.conversation_id);  // 中断无 done 帧,靠这里记会话号供续跑
+            on.interrupt && on.interrupt(data);
+          }
+          else if (data.event === "actions") on.actions && on.actions(data.items || []);
+          else if (data.event === "done") setConversationId(data.conversation_id);
+          else if (data.delta !== undefined) on.delta && on.delta(data.delta);
+        }
+      }
+    }
+
+    // 把一次 SSE 流(/api/chat 首轮 或 /api/actions/resume 续跑)渲染进 bubble;
+    // 遇 interrupt 按 kind 分发:select_service 渲染服务卡点选,confirm_ticket 渲染工单预览卡
+    // (确认提交/取消),两者都在用户操作后开新气泡续跑。
+    async function streamInto(bubble, doFetch) {
+      showTyping(bubble);
+      let structured = false, textStarted = false, interrupted = false, raw = "";
+      let textEl = null, citations = [], actions = [];
+      // 工具折叠组:运行中实时显示"第 N 次+已耗时",文本开始输出或流结束时收起
+      let toolGroup = null, toolHead = null, toolBadges = null;
+      let toolCount = 0, toolStart = 0, toolTimer = null, toolOpen = false;
+      const fmtDur = (ms) => (ms / 1000).toFixed(0) + "s";
+      function ensureToolGroup() {
+        if (toolGroup) return;
+        // 清掉开头的打字动画,工具组(带计时的状态行)永远占回复最上方——否则先出文字
+        // 再调工具时,工具组会被追加到文字下面,计时行就跟着内容往下飘(显得乱)
+        bubble.querySelectorAll(".typing").forEach((n) => n.remove());
+        toolGroup = document.createElement("div");
+        toolGroup.className = "tool-group";
+        toolHead = document.createElement("div");
+        toolHead.className = "tool-group-head running";
+        toolBadges = document.createElement("div");
+        toolBadges.className = "tool-badges";
+        toolBadges.style.display = "none";   // 默认收起:只报"次数+耗时",明细点开才看
+        toolGroup.appendChild(toolHead);
+        toolGroup.appendChild(toolBadges);
+        bubble.prepend(toolGroup);
+        toolStart = Date.now();
+        toolTimer = setInterval(() => {
+          toolHead.textContent = "🔧 正在调用工具(" + toolCount + " 次)· 已 " + fmtDur(Date.now() - toolStart) + " …";
+        }, 500);
+        toolHead.addEventListener("click", () => {
+          toolOpen = !toolOpen;
+          toolGroup.classList.toggle("open", toolOpen);
+          toolBadges.style.display = toolOpen ? "" : "none";
+        });
+      }
+      function finishToolGroup() {
+        if (!toolGroup) return;          // 幂等:重复调用不重复挂 caret、不报错
+        if (toolTimer) { clearInterval(toolTimer); toolTimer = null; }
+        toolHead.classList.remove("running");
+        toolHead.textContent = "🔧 已调用 " + toolCount + " 次工具 · 耗时 " + fmtDur(Date.now() - toolStart);
+        if (!toolHead.querySelector(".tg-caret")) {
+          const caret = document.createElement("span");
+          caret.className = "tg-caret"; caret.textContent = "⌄";
+          toolHead.appendChild(caret);
+        }
+        if (!toolOpen) { toolGroup.classList.remove("open"); toolBadges.style.display = "none"; }
+      }
+      function ensureStructure() {
+        if (structured) return;
+        structured = true;
+        textEl = document.createElement("div");
+        textEl.className = "bubble-text";
+        // 正文永远排在工具组下面(工具组已 prepend 到最上方);没有工具组时先清打字动画再放正文
+        if (!toolGroup) bubble.innerHTML = "";
+        bubble.appendChild(textEl);
+        showTyping(textEl);
+      }
+      const resp = await doFetch();
+      await readSSEStream(resp, {
+        delta: (delta) => {
+          ensureStructure();
+          if (!textStarted) { textEl.innerHTML = ""; textStarted = true; finishToolGroup(); }
+          raw += delta;
+          textEl.innerHTML = renderMarkdown(raw);
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        },
+        tool: (toolName) => {
+          ensureToolGroup();
+          toolCount++;
+          const b = document.createElement("div");
+          b.className = "tool-badge";
+          b.textContent = "🔧 调用了 " + toolName;
+          toolBadges.appendChild(b);
+          toolHead.textContent = "🔧 正在调用工具(" + toolCount + " 次)· 已 " + fmtDur(Date.now() - toolStart) + " …";
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        },
+        citations: (items) => { citations = items; },
+        actions: (items) => { actions = items; },
+        interrupt: (data) => {
+          interrupted = true;
+          finishToolGroup();
+          // 只清打字动画,别把工具组一起抹掉(状态行要留在回复最上方)
+          if (!structured) {
+            bubble.querySelectorAll(".typing").forEach((n) => n.remove());
+            structured = true;
+          }
+          // ch08:中断按 kind 分发——select_service 弹服务卡,confirm_ticket 弹工单预览卡
+          if (data.kind === "confirm_ticket") renderTicketConfirm(bubble, data.preview || {});
+          if (data.kind === "confirm_intake") renderIntakeConfirm(bubble, data.preview || {});
+          else renderServiceCards(bubble, data.services || []);
+        },
+      });
+      finishToolGroup();
+      if (interrupted) return;
+      if (!textStarted) { ensureStructure(); textEl.innerHTML = ""; textEl.textContent = "(无回复)"; }
+      if (textStarted && citations.length) decorateCitations(textEl, citations);
+      if (actions.length) renderActions(bubble, actions);
+      // 带卡片动作的轮次不挂反馈条:那轮文字只有一句"已发起/已派出",没有可评的回答,
+      // 反馈条夹在诊断卡和修复卡中间只会显得悬空
+      if (textStarted && !actions.length) addFeedbackBar(bubble);
+    }
+
+    async function send(preset) {
+      const message = (preset ?? inputEl.value).trim();
+      if (!message) return;
+      inputEl.value = "";
+      autoGrow();
+      addRow("user").textContent = message;
+      setBusy(true);
+      const bubble = addRow("bot");
+      try {
+        await streamInto(bubble, () => fetch("/api/chat", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: getUserId(), message, conversation_id: getConversationId() }),
+        }));
+      } catch (err) {
+        bubble.className = "bubble error";
+        bubble.textContent = "回复失败,请稍后重试";
+      } finally {
+        setBusy(false);
+        loadConversations();   // ch07:每轮后刷新侧栏(新会话入列/摘要标记更新)
+      }
+    }
+
+    // ---------- ch07:会话侧栏(列表 / 切换 / 历史回载) ----------
+    const convListEl = document.getElementById("conv-list");
+
+    async function loadConversations() {
+      // 快照先行:上次拉到的列表先画上(海外往返几百毫秒,不该每次"加载中"),
+      // 网络回来再替换;失败且有旧数据时静默保旧
+      let snap = null;
+      try { snap = JSON.parse(sessionStorage.getItem("opspaw_convs") || "null"); } catch (e) {}
+      if (snap) { try { renderConvList(snap); } catch (e) { } }
+      try {
+        // 不传 user_id:身份由服务端按登录态决定(见 /api/conversations)。
+        // 传本机 id 会先查出一份空列表,等 whoami 回来再查第二次——首屏就闪一下"没有会话"。
+        const r = await fetch("/api/conversations");
+        if (!r.ok) { if (!snap) convListHint("会话列表加载失败,刷新试试"); return; }
+        const items = (await r.json()).items || [];
+        try { sessionStorage.setItem("opspaw_convs", JSON.stringify(items)); } catch (e) {}
+        renderConvList(items);
+      } catch (e) {
+        if (!snap) convListHint("会话列表加载失败,刷新试试");   // 侧栏失败不影响聊天
+      }
+    }
+
+    function convListHint(text) {
+      convListEl.innerHTML = "";
+      const d = document.createElement("div");
+      d.className = "sb-empty";
+      d.textContent = text;
+      convListEl.appendChild(d);
+    }
+
+    function renderConvList(items) {
+      convListEl.innerHTML = "";
+      if (!items.length) { convListHint("还没有会话,发条消息开始吧~"); return; }
+      const current = getConversationId();
+      for (const it of items) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.dataset.cid = it.id;
+        b.className = "conv-item" + (it.id === current ? " active" : "");
+        // 主标题:后台生成的小标题优先,没有就回退首问截断;不显示预览小字(用户嫌突兀)
+        const mainTitle = it.title || ((it.preview || "").slice(0, 14) || "新会话");
+        b.innerHTML =
+          '<div class="ci-top"><span class="ci-title"></span>' +
+          (it.has_summary ? ' <span class="ci-sum">已摘要</span>' : "") +
+          ' <span class="ci-del" role="button" title="删除会话">×</span>' +
+          "</div>";
+        b.querySelector(".ci-title").textContent = mainTitle;
+        // 删除角标:阻断外层 button 的切换,确认后删;删的是当前会话就清空聊天区
+        b.querySelector(".ci-del").addEventListener("click", async (ev) => {
+          ev.stopPropagation();
+          ev.preventDefault();
+          if (!(await confirmDialog("删除会话「" + mainTitle + "」?消息记录会一并删除,不可恢复。", "删除"))) return;
+          try {
+            const r = await fetch("/api/conversations/" + it.id, { method: "DELETE" });
+            if (!r.ok) {
+              const d = await r.json().catch(() => ({}));
+              throw new Error(d.detail || "HTTP " + r.status);
+            }
+            if (it.id === getConversationId()) {
+              clearConversationId();
+              renderEmptyState();
+            }
+            loadConversations();
+          } catch (err) {
+            // 聊天页无 toast,删除失败属罕见路径,原生 alert 足够可靠
+            alert("删除失败:" + err.message);
+          }
+        });
+        b.addEventListener("click", () => { if (!BUSY) switchConversation(it.id); });
+        convListEl.appendChild(b);
+      }
+    }
+
+    // 历史回载时补挂按钮:suggested_actions 不落库,但这两句话术是固定文案,
+    // 且转人工/建工单按钮不依赖当轮上下文(转人工纯前端模拟,建工单表单用户现填),
+    // 按文案精确匹配重建即可。话术改了这里要跟着改(单一来源在后端 prompts.py)。
+    const REPLAY_ACTIONS = [
+      { text: "非常抱歉给您带来了不好的体验,我理解您的心情。您可以选择联系二线值班,或让我为您登记一张工单跟进处理。",
+        actions: [{ type: "transfer_human" }, { type: "create_ticket", draft: {} }] },
+    ];
+
+    function updateActiveHighlight() {
+      // 只切 active 高亮,不全量重建侧栏——切换会话的高频路径,重建按钮列表纯属浪费
+      const current = getConversationId();
+      for (const b of convListEl.querySelectorAll(".conv-item"))
+        b.classList.toggle("active", Number(b.dataset.cid) === current);
+    }
+
+    async function switchConversation(cid) {
+      // 已是当前会话且聊天区有内容才跳过;页面刚刷新时聊天区是空的,点当前会话也要回载
+      if (cid === getConversationId() && messagesEl.querySelector(".row")) return;
+      setConversationId(cid);
+      messagesEl.innerHTML = "";
+      try {
+        const r = await fetch("/api/conversations/" + cid + "/messages");
+        if (r.ok) {
+          for (const m of ((await r.json()).items || [])) {
+            if (!m.content) continue;
+            if (m.role === "user") {
+              addRow("user", { scroll: false }).textContent = m.content;
+            } else {
+              const bubble = addRow("bot", { scroll: false });
+              const textEl = document.createElement("div");
+              textEl.className = "bubble-text";
+              textEl.innerHTML = renderMarkdown(m.content);
+              bubble.appendChild(textEl);
+              // 引用角标回载:直播时 [n] 会被装饰成可点珊瑚色上标,回载不重建就只剩
+              // 普通正文的 "[1]"——颜色、字号、下划线、来源浮层全丢(2026-10-22 修)
+              if (m.citations && m.citations.length) decorateCitations(textEl, m.citations);
+              // 动作卡回载:优先用落库的 meta.suggested_actions(诊断卡/服务卡/按钮都走这);
+              // 旧数据没落库,保留文案精确匹配兜底(转人工/建工单)
+              if (m.actions && m.actions.length) renderActions(bubble, m.actions, true);
+              else {
+                const hit = REPLAY_ACTIONS.find((ra) => m.content.trim() === ra.text);
+                if (hit) renderActions(bubble, hit.actions, true);
+              }
+              // 和直播轮同一规则:带卡片动作的轮次不挂反馈条(那里没有可评的回答文本)
+              if (!m.actions || !m.actions.length) addFeedbackBar(bubble);
+            }
+          }
+        }
+      } catch (e) { /* 历史加载失败仍可继续聊 */ }
+      if (!messagesEl.children.length) renderEmptyState();
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      updateActiveHighlight();   // 只刷新高亮:列表内容没变,全量重建侧栏白费一次重排
+      inputEl.focus();
+    }
+
+    function autoGrow() {
+      inputEl.style.height = "auto";
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 128) + "px";
+    }
+
+    sendBtn.addEventListener("click", () => send());
+    inputEl.addEventListener("input", autoGrow);
+    inputEl.addEventListener("keydown", (e) => {
+      // 输入法组合中(拼音/英文候选未上屏)按 Enter 是「确认上屏」,不是发送;
+      // isComposing 判组合中,keyCode 229 兜底个别浏览器上屏键事件不置位的情况
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (sendBtn.disabled) return;   // agent 输出中:字随便打,发送拦住
+        send();
+      }
+    });
+    newChatBtn.addEventListener("click", () => {
+      clearConversationId();          // 开新会话:丢弃当前 conversation_id(旧会话仍在侧栏可切回)
+      renderEmptyState();
+      loadConversations();            // 清 active 高亮
+      inputEl.focus();
+    });
+
+    // 先把欢迎页画出来,再做别的初始化:没有会话(或后面哪一步取数失败)时,
+    // 聊天区永远落在"主页",不会留一片空白
+    renderEmptyState();
+    getUserId();
+    // ---------- 悬浮双入口:值班猫 / 服务监控 ----------
+    // 五张图是前端自己画的(和 RAG 评估页同一套手写 SVG 风格),不走 iframe。
+    // 指标表达式在服务端(app/tools/grafana.py::metric_specs),和 Grafana 面板共用一份。
+    const gvFrame = document.getElementById("gv-frame");
+    const gvSidebar = document.getElementById("sidebar");
+    const gvPickerBtn = document.getElementById("gv-picker-btn");
+    const gvPickerCur = document.getElementById("gv-picker-cur");
+    const gvPickerMenu = document.getElementById("gv-picker-menu");
+    const gvPlatBtn = document.getElementById("gv-plat-btn");
+    const gvPlatCur = document.getElementById("gv-plat-cur");
+    const gvPlatMenu = document.getElementById("gv-plat-menu");
+    let gvPlats = null;     // 平台清单(以后客户接第二个平台,这里自动多一项)
+    let gvTargetId = null;  // 当前平台 id
+    let gvMeta = null;      // 当前平台的面板信息(uid/地址/服务清单)
+    let gvCurrent = "";     // "" = 全部服务
+    let gvMinutes = 60;
+    let gvLastUrl = "";
+
+    // 视图切换:对话 / 服务监控。会话列表只在对话视图里出现。
+    function switchView(view) {
+      const isChat = view === "chat";
+      messagesEl.hidden = !isChat;
+      gvSidebar.hidden = !isChat;      // 会话列表只在对话视图里出现
+      const foot = document.querySelector(".main footer");
+      if (foot) foot.hidden = !isChat;
+      document.getElementById("grafana-view").hidden = view !== "grafana";
+      document.getElementById("sentinel-view").hidden = view !== "sentinel";
+      document.getElementById("incidents-view").hidden = view !== "incidents";
+      document.querySelectorAll(".view-tab").forEach((b) => {
+        b.classList.toggle("active", b.dataset.view === view);
+      });
+      if (view === "grafana") loadMonitor();
+      if (view === "sentinel") loadSentinels();
+      if (view === "incidents") loadIncidents();
+      // 记住当前页签:刷新后还停在这一页,不用每次回到对话
+      try { localStorage.setItem("opspaw_view", view); } catch (e) { /* 存不下就算了 */ }
+    }
+
+    // ---------- 事故中心:告警并单后的那张"事故卡" ----------
+    // 事故是异步推进的(诊断/修复在后台跑),视图开着就轻轮询,关了立刻停
+    let icTimer = null;
+    const IC_FILTERS = [["active", "未关闭"], ["", "全部"],
+                        ["resolved", "已解决"], ["closed", "已关闭"]];
+    let icFilter = "active";
+    let icLastPayload = "";   // 上次渲染的数据签名:内容没变就不重绘,轮询不闪屏
+    const IC_STATUS_TEXT = { open: "诊断中", diagnosed: "已定位", mitigating: "修复中",
+                             resolved: "已解决", closed: "已关闭", merged: "已并入" };
+
+    function icEsc(s) {
+      return String(s == null ? "" : s).replace(/[&<>"']/g,
+        (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+    }
+
+    async function loadIncidents() {
+      try {
+        const r = await fetch("/api/incidents");
+        const data = await r.json();
+        const sig = JSON.stringify(data);
+        if (sig === icLastPayload) return;
+        icLastPayload = sig;
+        renderIncidents(data);
+      } catch (e) { /* 网络抖动就保持上一屏,下次轮询再试 */ }
+      if (icTimer) clearInterval(icTimer);
+      icTimer = setInterval(() => {
+        if (document.getElementById("incidents-view").hidden) {
+          clearInterval(icTimer); icTimer = null; return;
+        }
+        loadIncidents();
+      }, 15000);
+    }
+
+    function renderIncidents(data) {
+      const stats = data.stats || {};
+      const st = document.getElementById("ic-stats");
+      st.innerHTML =
+        '<span class="ic-stat">未关闭 <b>' + (stats.open || 0) + '</b></span>' +
+        '<span class="ic-stat">累计事故 <b>' + (stats.incidents_total || 0) + '</b> 起</span>' +
+        '<span class="ic-stat">累计告警 <b>' + (stats.alerts_total || 0) + '</b> 条</span>' +
+        ((stats.alerts_total || 0) > (stats.incidents_total || 0)
+          ? '<span class="ic-stat">并单率 <b>' +
+            Math.round(100 * (1 - (stats.incidents_total || 0) / stats.alerts_total)) +
+            '%</b></span>' : "");
+      const list = document.getElementById("ic-list");
+      let rows = data.incidents || [];
+      if (icFilter === "active")
+        rows = rows.filter((x) => ["open", "diagnosed", "mitigating"].includes(x.status));
+      else if (icFilter)
+        rows = rows.filter((x) => x.status === icFilter);
+      if (!rows.length) {
+        list.innerHTML = '<span class="gv-dim">还没有' +
+          (IC_FILTERS.find((f) => f[0] === icFilter) || ["", ""])[1] + '的事故——平台安稳着呢</span>';
+        return;
+      }
+      list.innerHTML = rows.map((x) => {
+        const upd = (x.updated_at || "").replace("T", " ").slice(5, 16);
+        return '<div class="ic-card">' +
+          '<div class="ic-card-head">' +
+            '<span class="ic-sev ' + icEsc(x.severity) + '">' + icEsc(x.severity) + '</span>' +
+            '<span class="ic-title">#' + x.id + ' ' + icEsc(x.title) + '</span>' +
+            '<span class="ic-status ' + icEsc(x.status) + '">' +
+              (IC_STATUS_TEXT[x.status] || icEsc(x.status)) + '</span>' +
+          '</div>' +
+          '<div class="ic-meta">' +
+            (x.root_cause_service ? '根因 <b>' + icEsc(x.root_cause_service) + '</b>' +
+              (x.fault_type ? '(' + icEsc(x.fault_type) + ')' : '') + ' · ' : '') +
+            '症状 ' + icEsc(x.service || "(全平台)") +
+            (x.platform ? '@' + icEsc(x.platform) : '') +
+            ' · <b>' + (x.alert_count || 1) + '</b> 条告警并成 1 起 · ' + upd +
+            (x.note ? '<br>' + icEsc(x.note) : '') +
+          '</div>' +
+          '<div class="ic-ops">' +
+            '<a class="action-btn" href="/incident/' + x.id + '">查看详情</a>' +
+            (["open", "diagnosed", "mitigating"].includes(x.status)
+              ? '<button type="button" class="action-btn" data-ic-resolve="' + x.id + '">标记解决</button>'
+              : (x.status !== "closed"
+                  ? '<button type="button" class="action-btn" data-ic-close="' + x.id + '">关闭</button>' : '')) +
+          '</div>' +
+        '</div>';
+      }).join("");
+      list.querySelectorAll("[data-ic-resolve]").forEach((b) =>
+        b.addEventListener("click", () => icSetStatus(b.dataset.icResolve, "resolved")));
+      list.querySelectorAll("[data-ic-close]").forEach((b) =>
+        b.addEventListener("click", () => icSetStatus(b.dataset.icClose, "closed")));
+    }
+
+    async function icSetStatus(iid, status) {
+      const label = status === "resolved" ? "标记解决" : "关闭";
+      if (!(await confirmDialog("确认把事故 #" + iid + " " + label + "?", label))) return;
+      try {
+        await fetch("/api/incidents/" + iid + "/status", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: status, note: label + "(值班员手动)" }),
+        });
+        loadIncidents();
+      } catch (e) { await confirmDialog("操作失败(网络异常),请稍后再试", "知道了"); }
+    }
+
+    (function icInitFilter() {
+      const btn = document.getElementById("ic-filter-btn");
+      const menu = document.getElementById("ic-filter-menu");
+      const cur = document.getElementById("ic-filter-cur");
+      menu.innerHTML = IC_FILTERS.map((f) =>
+        '<button type="button" data-v="' + f[0] + '"' +
+        (f[0] === icFilter ? ' class="on"' : '') + '>' + f[1] + '</button>').join("");
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        menu.hidden = !menu.hidden;
+      });
+      menu.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+        icFilter = b.dataset.v;
+        cur.textContent = b.textContent;
+        menu.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+        menu.hidden = true;
+        icLastPayload = "";      // 换了筛选条件:同数据也要按新口径重绘
+        loadIncidents();
+      }));
+      document.addEventListener("click", () => { menu.hidden = true; });
+      document.getElementById("ic-refresh").addEventListener("click", () => {
+        icLastPayload = "";      // 手动刷新:强制重绘
+        loadIncidents();
+      });
+    })();
+
+    // 面板是嵌进来的:Grafana 那边的图比我们自己画的强得多(配色、图例、缩放),
+    // 我们只负责"看哪个平台、哪个服务、多长时间"这三个控件。
+    function frameUrl() {
+      if (!gvMeta) return "";
+      // 不指定服务时传 All:面板变量开了 includeAll,allValue=.* 才会聚合全部服务
+      return gvMeta.grafana_url + "/d/" + gvMeta.uid +
+             "?from=now-" + gvMinutes + "m&to=now&refresh=30s&theme=light&kiosk" +
+             "&var-service=" + encodeURIComponent(gvCurrent || "All");
+    }
+    function applyFrame() {
+      const u = frameUrl();
+      if (!u) return;
+      // 地址没变就别重设 src:重设会让 iframe 整页白一下再重新拉,看着像卡顿
+      if (u === gvLastUrl) return;
+      gvLastUrl = u;
+      gvFrame.src = u;
+    }
+
+    function setService(svc) {
+      gvCurrent = svc || "";
+      gvPickerCur.textContent = gvCurrent || "全部";
+      gvPickerMenu.querySelectorAll("button").forEach((b) => {
+        b.classList.toggle("on", (b.dataset.v || "") === gvCurrent);
+      });
+      gvPickerMenu.hidden = true;
+      // 图先本地重排(零等待),面板和事件/日志在后台追上
+      if (gvGraph) renderTopoGraph(gvCurrent);
+      applyFrame();
+      loadContext();
+    }
+
+    function buildPicker(services) {
+      gvPickerMenu.innerHTML = "";
+      const opts = [{ v: "", label: "全部" }]
+        .concat((services || []).map((x) => ({ v: x, label: x })));
+      for (const o of opts) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.dataset.v = o.v;
+        b.textContent = o.label;
+        if (o.v === gvCurrent) b.classList.add("on");
+        b.addEventListener("click", (ev) => { ev.stopPropagation(); setService(o.v); });
+        gvPickerMenu.appendChild(b);
+      }
+    }
+
+    function buildPlatPicker() {
+      gvPlatMenu.innerHTML = "";
+      for (const t of (gvPlats || [])) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.dataset.v = t.id;
+        b.textContent = t.name;
+        if (t.id === gvTargetId) b.classList.add("on");
+        b.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          gvPlatMenu.hidden = true;
+          if (t.id === gvTargetId) return;
+          gvTargetId = t.id;
+          gvMeta = null;          // 换平台:面板要重新生成
+          gvLastUrl = "";
+          gvCurrent = "";         // 服务清单也变了,回到"全部"
+          gvPlatCur.textContent = t.name;
+          buildPlatPicker();
+          loadTarget();
+        });
+        gvPlatMenu.appendChild(b);
+      }
+    }
+
+    gvPickerBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      gvPickerMenu.hidden = !gvPickerMenu.hidden;
+      gvPlatMenu.hidden = true;
+    });
+    gvPlatBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      gvPlatMenu.hidden = !gvPlatMenu.hidden;
+      gvPickerMenu.hidden = true;
+    });
+    document.addEventListener("click", () => {
+      gvPickerMenu.hidden = true;
+      gvPlatMenu.hidden = true;
+    });
+
+    document.getElementById("gv-range").addEventListener("click", (ev) => {
+      const b = ev.target.closest("button");
+      if (!b) return;
+      gvMinutes = Number(b.dataset.min) || 60;
+      document.querySelectorAll("#gv-range button").forEach((x) => {
+        x.classList.toggle("on", x === b);
+      });
+      applyFrame();
+    });
+
+    async function loadTarget() {
+      try {
+        const r = await fetch("/api/grafana/dashboard" +
+                              (gvTargetId ? "?target_id=" + gvTargetId : ""));
+        const info = await r.json();
+        if (!r.ok) throw new Error(info.detail || ("HTTP " + r.status));
+        gvMeta = info;
+        gvTargetId = info.target_id;
+      } catch (e) {
+        gvPlatCur.textContent = "面板准备失败";
+        return;
+      }
+      gvPlatCur.textContent = gvMeta.target;
+      buildPlatPicker();
+      buildPicker(gvMeta.services);
+      gvPickerCur.textContent = gvCurrent || "全部";
+      applyFrame();
+    }
+
+    // 下方两块:上下游 + 最近事件。数据来自最近一次诊断存下的调用图,
+    // 不额外采一遍(监控页要秒开);没有就如实说没有。
+    // 会话级持久:整页刷新后先画上次的数据(不挂"读取中…"),后台再拉新
+    let gvCtxCache = (() => {
+      try { return JSON.parse(sessionStorage.getItem("opspaw_gv_ctx") || "{}"); }
+      catch (e) { return {}; }
+    })();
+    function gvCtxSave() {
+      try { sessionStorage.setItem("opspaw_gv_ctx", JSON.stringify(gvCtxCache)); }
+      catch (e) { /* 存不下就算了 */ }
+    }
+    // 上下游调用图(2026-10-24 重做):选中服务居中、上游在左、下游在右——
+    // 箭头方向=流量方向,每条边叠一层短划流动动画,平台是"活"的。
+    // 全平台边集拿一次缓存在前端,切服务**本地重排零等待**(旧版切一次等一次网络)。
+    let gvGraph = null;   // {edges, abnormal, reason} 全平台调用关系(context 接口带回)
+
+    function gvLayeredView(edges, root) {
+      const nodes = new Set();
+      edges.forEach((e) => { nodes.add(e.from); nodes.add(e.to); });
+      let view = edges, center = (root && nodes.has(root)) ? root : null;
+      if (center) {
+        // 单服务模式:只看它 ±2 跳的子图——全平台糊脸上谁也读不动
+        const adj = {}; nodes.forEach((n) => { adj[n] = []; });
+        edges.forEach((e) => { adj[e.from].push(e.to); adj[e.to].push(e.from); });
+        const seen = new Set([center]);
+        let frontier = [center];
+        for (let d = 0; d < 2; d++) {
+          const nx = [];
+          for (const u of frontier)
+            for (const v of adj[u]) if (!seen.has(v)) { seen.add(v); nx.push(v); }
+          frontier = nx;
+        }
+        view = edges.filter((e) => seen.has(e.from) && seen.has(e.to));
+      } else if (view.length) {
+        // "全部"模式:入边最多的节点当中心(流量汇聚点),布局才有主心骨
+        const indeg = {};
+        view.forEach((e) => { indeg[e.to] = (indeg[e.to] || 0) + 1; });
+        center = Object.keys(indeg).sort((a, b) => indeg[b] - indeg[a])[0];
+      }
+      const vs = new Set();
+      view.forEach((e) => { vs.add(e.from); vs.add(e.to); });
+      // 有向分层:沿下游走是正层(排在右),沿上游走是负层(排在左)
+      const fwd = {}, bwd = {};
+      vs.forEach((n) => { fwd[n] = []; bwd[n] = []; });
+      view.forEach((e) => { fwd[e.from].push(e.to); bwd[e.to].push(e.from); });
+      const layer = {};
+      if (center) {
+        layer[center] = 0;
+        let f = [center];
+        while (f.length) {
+          const nx = [];
+          for (const u of f) for (const v of fwd[u])
+            if (layer[v] === undefined) { layer[v] = layer[u] + 1; nx.push(v); }
+          f = nx;
+        }
+        f = [center];
+        while (f.length) {
+          const nx = [];
+          for (const u of f) for (const v of bwd[u])
+            if (layer[v] === undefined) { layer[v] = layer[u] - 1; nx.push(v); }
+          f = nx;
+        }
+      }
+      let minL = 0, maxL = 0;
+      vs.forEach((n) => {
+        const L = layer[n] === undefined ? 0 : layer[n];
+        minL = Math.min(minL, L); maxL = Math.max(maxL, L);
+      });
+      const cols = [];
+      for (let l = minL; l <= maxL; l++) cols.push([]);
+      vs.forEach((n) => {
+        const L = layer[n] === undefined ? 0 : layer[n];
+        cols[L - minL].push(n);
+      });
+      cols.forEach((c) => c.sort());
+      // 邻居重心排序:从中心列向两侧推,节点尽量挨着已排好的邻居——交叉线大减
+      const order = {};
+      const c0 = Math.round((cols.length - 1) / 2);
+      cols[c0].forEach((n, i) => { order[n] = i; });
+      for (let step = 1; step < cols.length; step++) {
+        for (const ci of [c0 + step, c0 - step]) {
+          if (ci < 0 || ci >= cols.length) continue;
+          const nbr = {};
+          cols[ci - 1]?.forEach((m) => { if (order[m] !== undefined) nbr[m] = order[m]; });
+          cols[ci + 1]?.forEach((m) => { if (order[m] !== undefined) nbr[m] = order[m]; });
+          cols[ci].sort((a, b) =>
+            ((nbr[a] !== undefined ? nbr[a] : 1e3) - (nbr[b] !== undefined ? nbr[b] : 1e3)) ||
+            (a < b ? -1 : 1));
+          cols[ci].forEach((n, i) => { order[n] = i; });
+        }
+      }
+      return { view, center, cols };
+    }
+
+    function renderTopoGraph(root) {
+      const el = document.getElementById("gv-topo");
+      if (!gvGraph || !(gvGraph.edges || []).length) {
+        el.innerHTML = '<span class="gv-dim" style="display:block;padding:14px">' +
+          ((gvGraph && gvGraph.reason) || "暂无调用关系") + "</span>";
+        return;
+      }
+      const edges = gvGraph.edges;
+      const abn = new Set(gvGraph.abnormal || []);
+      const { view, center, cols } = gvLayeredView(edges, root);
+      const NW = 150, NH = 40, GX = 84, GY = 24;
+      const colH = Math.max(1, ...cols.map((c) => c.length));
+      const W = cols.length * (NW + GX) + 30, H = colH * (NH + GY) + 30;
+      const pos = {};
+      cols.forEach((col, ci) => col.forEach((n, ri) => {
+        const off = (colH - col.length) * (NH + GY) / 2;
+        pos[n] = { x: 15 + ci * (NW + GX), y: 15 + ri * (NH + GY) + off };
+      }));
+      const INK = "#2b2632", RED = "#d6455a", CORAL = "#ff7a59", FUR = "#ff9f57";
+      const edgeGeom = (p1, p2) => {
+        const x1 = p1.x + NW, y1 = p1.y + NH / 2, x2 = p2.x - 3, y2 = p2.y + NH / 2;
+        if (Math.abs(p1.x - p2.x) < 5) {            // 同列竖向:从框底绕右侧
+          const rx = Math.max(p1.x + NW, p2.x + NW) + 24;
+          return { d: "M" + (p1.x + NW / 2) + "," + (p1.y + NH) +
+                        " C" + rx + "," + (p1.y + NH) + " " + rx + "," + (p2.y + NH / 2) +
+                        " " + (p2.x + NW) + "," + y2, label: false };
+        }
+        if (x2 >= x1) {                             // 向右(下游):横向贝塞尔
+          const mx = (x1 + x2) / 2;
+          return { d: "M" + x1 + "," + y1 + " C" + mx + "," + y1 + " " + mx + "," + y2 +
+                        " " + x2 + "," + y2, label: x2 >= x1 + 40, lx: mx, ly: (y1 + y2) / 2 - 5 };
+        }
+        const ry = Math.min(p1.y, p2.y) - 26;       // 反向(上游回调):绕上方
+        return { d: "M" + (p1.x + NW / 2) + "," + p1.y + " C" + (p1.x + NW / 2) + "," + ry +
+                      " " + (p2.x + NW / 2) + "," + ry + " " + (p2.x + NW / 2) + "," + p2.y,
+                 label: false };
+      };
+      let s = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + " " + H + '">';
+      s += "<defs>" +
+        '<marker id="gva" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="' + INK + '"/></marker>' +
+        '<marker id="gvr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="' + RED + '"/></marker>' +
+        "</defs>";
+      // 流速/粗细按真实调用量定档:连续刻度(14 个渐变值)人眼分不出相邻差,
+      // 改成**三档离散**——按数据自身三分位切档(不拍绝对阈值),档间速度差约
+      // 两倍(0.6s/1.3s/2.4s)一眼可分;全体同量(指标兜底 calls 全 1)时全图统一
+      const weights = view.map((e) => Math.log((e.rate || e.calls || 1) + 1));
+      const sortedW = [...weights].sort((a, b) => a - b);
+      const qAt = (p) => sortedW[Math.min(sortedW.length - 1,
+                                          Math.floor(p * (sortedW.length - 1)))];
+      const cuts = [qAt(1 / 5), qAt(2 / 5), qAt(3 / 5), qAt(4 / 5)];
+      const tierOf = (w) => {
+        for (let t = 4; t >= 1; t--)
+          if (w > cuts[t - 1] && cuts[3] > cuts[0]) return t;
+        return 0;
+      };
+      const TIER_DUR = [2.6, 1.9, 1.35, 0.9, 0.55], TIER_WD = [1.4, 2.0, 2.6, 3.2, 3.8];
+      view.forEach((e, i) => {
+        const p1 = pos[e.from], p2 = pos[e.to];
+        if (!p1 || !p2) return;
+        const hot = abn.has(e.from) || abn.has(e.to);
+        const main = e.from === center || e.to === center;
+        const t = tierOf(weights[i]);
+        const g = edgeGeom(p1, p2);
+        // 底层线:细而淡,只表达"存在这条边";箭头钉在目标框上
+        s += '<path d="' + g.d + '" fill="none" stroke="' + (hot ? RED : INK) +
+             '" stroke-width="2" opacity="' + (main ? 0.55 : 0.26) +
+             '" marker-end="url(#' + (hot ? "gvr" : "gva") + ')"/>';
+        // 流动层:颜色=流量档(绿小→琥珀中→红大,由 t0/t1/t2 类上色),
+        // 颗粒大小/速度/线宽做辅助——人眼对速度差几乎无感,对色相一眼分层
+        s += '<path class="gv-flow t' + t + '" d="' + g.d + '" fill="none"' +
+             ' stroke-width="' + TIER_WD[t] +
+             '" style="animation-duration:' + TIER_DUR[t] + 's"/>';
+        if (g.label && main && e.calls > 1)
+          s += '<text x="' + g.lx + '" y="' + g.ly + '" text-anchor="middle" font-size="10" fill="#9b8f86">' +
+               e.calls + "次</text>";
+      });
+      for (const n of Object.keys(pos)) {
+        const p = pos[n];
+        const self = n === center, ab = abn.has(n);
+        s += '<g class="gv-node" data-svc="' + icEsc(n) + '">' +
+          '<rect x="' + p.x + '" y="' + p.y + '" width="' + NW + '" height="' + NH +
+          '" fill="' + (self ? CORAL : ab ? "#ffe0e0" : "#fffaf0") +
+          '" stroke="' + (ab ? RED : INK) + '" stroke-width="' + (self ? 4 : 2) + '"/>' +
+          '<text x="' + (p.x + NW / 2) + '" y="' + (p.y + 17) + '" text-anchor="middle" font-size="12" font-weight="700" fill="' +
+          (self ? "#fff" : INK) + '">' + icEsc(n) + "</text>" +
+          '<text x="' + (p.x + NW / 2) + '" y="' + (p.y + 32) + '" text-anchor="middle" font-size="9.5" fill="' +
+          (self ? "#fff" : "#5d5460") + '">' + (self ? "当前服务" : ab ? "近期异常" : " ") + "</text></g>";
+      }
+      el.innerHTML = s + "</svg>";
+    }
+    document.getElementById("gv-topo").addEventListener("click", (ev) => {
+      const g = ev.target.closest(".gv-node");
+      if (g && g.dataset.svc && g.dataset.svc !== gvCurrent) setService(g.dataset.svc);
+    });
+
+    // 事件 + 错误日志合成一块:上半是哨兵触发流水,下半是 Loki 错误日志聚类
+    function renderEventsLogs(d) {
+      const evEl = document.getElementById("gv-events");
+      const evs = d.events || [];
+      const logs = d.logs || {};
+      let html = '<div class="gv-sec">触发事件</div>';
+      html += evs.length ? evs.map((e) => {
+        const tt = (e.at || "").slice(5, 16).replace("T", " ");
+        const tail = e.skipped
+          ? '<span class="gv-ev-s">' + e.skipped + "</span>"
+          : (e.diagnosis_id || "");
+        return '<div class="gv-ev-row"><span class="gv-ev-t">' + tt + "</span>" +
+               "<span>" + (e.intake || "") + "</span>" +
+               '<span class="gv-dim">' + (e.trigger || "") + "</span>" +
+               "<span>" + tail + "</span></div>";
+      }).join("") : '<span class="gv-dim">这个服务还没有告警接入触发过</span>';
+      html += '<div class="gv-sec">错误日志聚类' +
+        (logs.minutes ? "(近 " + logs.minutes + " 分钟)" : "") + "</div>";
+      if (logs.note) {
+        html += '<span class="gv-dim">' + icEsc(logs.note) + "</span>";
+      } else if ((logs.clusters || []).length) {
+        html += logs.clusters.map((c) =>
+          '<div class="gv-log" title="' + icEsc(c.sample) + '"><b>' +
+          icEsc(c.label) + "</b>" + c.count + " 条</div>").join("");
+      } else {
+        html += '<span class="gv-dim">窗口内没有 error 日志</span>';
+      }
+      evEl.innerHTML = html;
+    }
+
+    function renderContext(d) {
+      gvGraph = { edges: (d.graph || {}).edges || [],
+                  abnormal: (d.graph || {}).abnormal || [],
+                  reason: (d.topology || {}).reason || "" };
+      renderTopoGraph(gvCurrent);
+      renderEventsLogs(d);
+    }
+
+    async function loadContext() {
+      const topoEl = document.getElementById("gv-topo");
+      const evEl = document.getElementById("gv-events");
+      const cached = gvCtxCache[gvCurrent];
+      if (cached) renderContext(cached);   // 有缓存先画,不闪"读取中…"
+      let d;
+      try {
+        const r = await fetch("/api/grafana/context?service=" + encodeURIComponent(gvCurrent) +
+                              "&minutes=" + gvMinutes);
+        d = await r.json();
+        if (!r.ok) throw new Error(d.detail || ("HTTP " + r.status));
+      } catch (e) {
+        topoEl.innerHTML = '<span class="gv-dim">取不到:' + (e.message || e) + "</span>";
+        evEl.innerHTML = '<span class="gv-dim">取不到</span>';
+        return;
+      }
+      gvCtxCache[gvCurrent] = d;
+      gvCtxSave();
+      renderContext(d);
+    }
+
+    async function loadMonitor() {
+      if (!gvPlats) {
+        try {
+          const r = await fetch("/api/grafana/targets");
+          const j = await r.json();
+          gvPlats = j.items || [];
+        } catch (e) { gvPlats = []; }
+      }
+      // 两块小卡与面板/平台清单**并行**拉:它们不依赖面板信息,不该排在
+      // "targets → dashboard"两跳往返后面(实测曾把首次进页卡成"读取中…"
+      // 挂到用户手动切一次服务才开拉——loadTarget 后直接 return 漏掉了它)
+      loadContext();
+      if (!gvMeta) { await loadTarget(); return; }
+      applyFrame();
+    }
+
+    // ---------- 告警接入:定时巡检 / 外部告警 / 指标阈值,都走同一条诊断链 ----------
+    let snLabels = {};      // 维度 key → 中文
+    let snOps = {};         // 比较符 → 中文
+    let snList = [];
+    let snTargets = null;
+    let snEditing = null;   // 正在编辑的 id,null = 新建
+
+    function snEl(tag, cls, text) {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    }
+    function snHookUrl(tok) { return location.origin + "/api/sentinels/hook/" + tok; }
+
+    // 通用下拉:原生 select 的下拉菜单皮肤改不动,和 OpsPaw 画风对不上,
+    // 所以用和顶栏一致的自绘下拉(按钮 + 菜单 + 隐藏 input 存值)。
+    function snPicker(btnId, menuId, hidId) {
+      const btn = document.getElementById(btnId);
+      const menu = document.getElementById(menuId);
+      const hid = document.getElementById(hidId);
+      const label = btn.querySelector("span");
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        menu.hidden = !menu.hidden;
+      });
+      return {
+        set(opts, val) {
+          menu.innerHTML = "";
+          let picked = null;
+          for (const o of opts) {
+            const b = document.createElement("button");
+            b.type = "button";
+            b.dataset.v = o.v;
+            b.textContent = o.label;
+            b.addEventListener("click", (ev) => {
+              ev.stopPropagation();
+              hid.value = o.v;
+              label.textContent = o.label;
+              menu.querySelectorAll("button").forEach((x) => {
+                x.classList.toggle("on", x === b);
+              });
+              menu.hidden = true;
+            });
+            if (String(o.v) === String(val)) { b.classList.add("on"); picked = o; }
+            menu.appendChild(b);
+          }
+          if (!picked && opts.length) picked = opts[0];
+          hid.value = picked ? picked.v : "";
+          label.textContent = picked ? picked.label : "—";
+          if (picked && menu.firstChild && menu.firstChild.classList) {
+            menu.firstChild.classList.add("on");
+          }
+        },
+      };
+    }
+
+    const snTargetPicker = snPicker("sn-target-btn", "sn-target-menu", "sn-target");
+    const snMetricPicker = snPicker("sn-th-metric-btn", "sn-th-metric-menu", "sn-th-metric");
+    const snOpPicker = snPicker("sn-th-op-btn", "sn-th-op-menu", "sn-th-op");
+    function schedMode() {
+      const r = document.querySelector('input[name="sn-sched-mode"]:checked');
+      return (r && r.value) || "cron";   // 默认就是"每天定点"
+    }
+    let snTargetOpts = [];
+    let snServices = [];      // 当前平台的服务清单
+    let snPicked = [];        // 已选服务
+
+    // 服务是多选:菜单里每条带勾选框,按钮上显示"全部服务 / 已选 N 个"
+    function renderServiceMenu() {
+      const menu = document.getElementById("sn-services-menu");
+      const btn = document.getElementById("sn-services-btn").querySelector("span");
+      menu.innerHTML = "";
+      if (!snServices.length) {
+        const d = document.createElement("div");
+        d.className = "sn-menu-empty";
+        d.textContent = "这个平台还没取到服务清单";
+        menu.appendChild(d);
+        btn.textContent = "全部服务";
+        document.getElementById("sn-services").value = "";
+        return;
+      }
+      for (const name of snServices) {
+        const lab = document.createElement("label");
+        lab.className = "sn-menu-item";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = snPicked.includes(name);
+        cb.addEventListener("change", () => {
+          snPicked = cb.checked
+            ? snPicked.concat([name])
+            : snPicked.filter((x) => x !== name);
+          document.getElementById("sn-services").value = snPicked.join(",");
+          btn.textContent = snLabel();
+        });
+        lab.appendChild(cb);
+        lab.appendChild(document.createTextNode(name));
+        menu.appendChild(lab);
+      }
+      document.getElementById("sn-services").value = snPicked.join(",");
+      btn.textContent = snLabel();
+    }
+
+    // 按钮上直接写服务名:只写"已选 N 个"等于没告诉人到底盯了谁
+    function snLabel() {
+      if (!snPicked.length) return "全部服务";
+      const head = snPicked.slice(0, 3).join("、");
+      return snPicked.length > 3 ? head + " 等 " + snPicked.length + " 个" : head;
+    }
+
+    document.addEventListener("click", () => {
+      document.querySelectorAll("#snMask .gv-picker-menu").forEach((m) => { m.hidden = true; });
+    });
+
+    function trigText(t) {
+      const out = [];
+      if (t.schedule && t.schedule.enabled) {
+        if ((t.schedule.mode || "interval") === "cron") {
+          const cm = /^(\d{1,2})\s+(\d{1,2})\s/.exec(t.schedule.cron || "");
+          out.push(cm ? "每天 " + String(cm[2]).padStart(2, "0") + ":" + String(cm[1]).padStart(2, "0")
+                      : "定时 " + (t.schedule.cron || ""));
+        } else {
+          out.push("定时每 " + t.schedule.interval_min + " 分钟");
+        }
+      }
+      if (t.webhook && t.webhook.enabled) out.push("外部告警");
+      if (t.threshold && t.threshold.enabled) {
+        out.push("阈值 " + (snLabels[t.threshold.metric] || t.threshold.metric) +
+                 (snOps[t.threshold.op] || t.threshold.op) + t.threshold.value);
+      }
+      return out.length ? out.join(" · ") : "未配置触发方式";
+    }
+
+    function renderSentinels() {
+      const box = document.getElementById("sn-list");
+      box.innerHTML = "";
+      if (!snList.length) {
+        box.appendChild(snEl("div", "gv-empty", "还没有接入规则。点右上角「＋ 新建接入」接一个。"));
+        return;
+      }
+      for (const s of snList) {
+        const card = snEl("div", "sn-card" + (s.enabled ? "" : " off"));
+        const head = snEl("div", "sn-card-head");
+        head.appendChild(snEl("span", "sn-name", s.name));
+        head.appendChild(snEl("span", "sn-tag " + (s.enabled ? "on" : "off"),
+                               s.enabled ? "启用中" : "已停用"));
+        const ops = snEl("div", "sn-ops");
+        const mk = (label, fn) => {
+          const b = snEl("button", "action-btn", label);
+          b.type = "button";
+          b.addEventListener("click", fn);
+          return b;
+        };
+        ops.appendChild(mk("立即跑一次", async () => {
+          const r = await fetch("/api/sentinels/" + s.id + "/test", { method: "POST" });
+          const j = await r.json();
+          alert(j.ok ? ("已触发诊断:" + j.diagnosis_id + "(服务:" + j.service + ")")
+                     : ("没触发:" + (j.message || j.detail || "未知原因")));
+          loadSentinels();
+        }));
+        ops.appendChild(mk("编辑", () => openForm(s)));
+        ops.appendChild(mk(s.enabled ? "停用" : "启用", async () => {
+          await fetch("/api/sentinels/" + s.id, {
+            method: "PATCH", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled: !s.enabled }),
+          });
+          loadSentinels();
+        }));
+        ops.appendChild(mk("删除", async () => {
+          if (!(await confirmDialog("删除接入「" + s.name + "」?它的 webhook 地址会立即失效。", "删除"))) return;
+          await fetch("/api/sentinels/" + s.id, { method: "DELETE" });
+          loadSentinels();
+        }));
+        head.appendChild(ops);
+        card.appendChild(head);
+
+        const scope = s.services.length ? s.services.join("、") : "平台自动找";
+        const dims = (s.checks || []).map((c) => snLabels[c] || c).join("、") || "全维度";
+        const pol = s.policy || {};
+        const hours = (pol.hours || [0, 24]);
+        const ACT_TXT = { diagnose: "只诊断", forward: "自动转发", repair: "自动修复" };
+        const actTxt = String(s.action || "diagnose").split(",")
+          .map((x) => ACT_TXT[x] || "").filter(Boolean).join(" + ") || "只诊断";
+        card.appendChild(snEl("div", "sn-meta",
+          "服务:" + scope + " · 关注:" + dims +
+          " · 之后:" + actTxt +
+          " · 触发:" + trigText(s.triggers || {}) +
+          " · 静默 " + (pol.silence_min ?? 15) + " 分钟" +
+          " · 生效 " + hours[0] + "-" + hours[1] + " 点" +
+          " · 已触发 " + s.trigger_count + " 次"));
+
+        if ((s.triggers || {}).webhook && (s.triggers || {}).webhook.enabled) {
+          const hook = snEl("div", "sn-hook");
+          hook.appendChild(snEl("code", "", snHookUrl(s.token)));
+          const cp = snEl("button", "action-btn", "复制");
+          cp.type = "button";
+          cp.addEventListener("click", () => {
+            navigator.clipboard.writeText(snHookUrl(s.token)).then(
+              () => { cp.textContent = "已复制"; setTimeout(() => { cp.textContent = "复制"; }, 1200); },
+              () => alert("复制失败,手动选中复制吧"));
+          });
+          hook.appendChild(cp);
+          card.appendChild(hook);
+        }
+
+        const evs = s.events || [];
+        if (evs.length) {
+          const ev = snEl("div", "sn-ev");
+          ev.innerHTML = "最近触发:" + evs.map((e) => {
+            const t = (e.at || "").slice(5, 19).replace("T", " ");
+            if (e.skipped) return "<span class='skip'>" + t + " " + e.trigger + "(" + e.skipped + ")</span>";
+            return "<b>" + t + " " + e.trigger + "</b> → " + (e.diagnosis_id || "");
+          }).join(" · ");
+          card.appendChild(ev);
+        }
+        box.appendChild(card);
+      }
+    }
+
+    async function loadSentinels() {
+      if (snTargets === null) {
+        try {
+          const r = await fetch("/api/grafana/targets");
+          snTargets = (await r.json()).items || [];
+        } catch (e) { snTargets = []; }
+        // 平台必选:不留"默认平台"这种空项,直接列出来并默认第一个
+        snTargetOpts = snTargets.length
+          ? snTargets.map((t) => ({ v: String(t.id), label: t.name }))
+          : [{ v: "", label: "(还没有接入平台)" }];
+        snTargetPicker.set(snTargetOpts, snTargetOpts[0].v);
+        // 服务清单:轻量接口,只读服务目录
+        try {
+          const rs = await fetch("/api/grafana/services");
+          const js2 = await rs.json();
+          snServices = js2.services || [];
+        } catch (e) { snServices = []; }
+        renderServiceMenu();
+      }
+      try {
+        const r = await fetch("/api/sentinels");
+        const j = await r.json();
+        snLabels = j.check_labels || snLabels;
+        snOps = j.ops || snOps;
+        snList = j.items || [];
+        buildCheckBoxes();
+        buildMetricSelect();
+        renderSentinels();
+      } catch (e) {
+        document.getElementById("sn-list").innerHTML =
+          '<div class="gv-empty">接入列表加载失败:' + (e.message || e) + "</div>";
+      }
+    }
+
+    function buildCheckBoxes() {
+      const box = document.getElementById("sn-checks");
+      if (box.dataset.built) return;
+      box.dataset.built = "1";
+      for (const k of Object.keys(snLabels)) {
+        const lab = document.createElement("label");
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = k;
+        lab.appendChild(cb);
+        lab.appendChild(document.createTextNode(snLabels[k]));
+        box.appendChild(lab);
+      }
+    }
+
+    function buildMetricSelect() {
+      if (document.getElementById("sn-th-metric-menu").dataset.built) return;
+      document.getElementById("sn-th-metric-menu").dataset.built = "1";
+      snMetricPicker.set(Object.keys(snLabels)
+        .map((k) => ({ v: k, label: snLabels[k] })), "error");
+      snOpPicker.set([{ v: ">", label: "高于" }, { v: "<", label: "低于" }], ">");
+    }
+
+    function openForm(s) {
+      snEditing = s ? s.id : null;
+      document.getElementById("snMask").classList.add("open");
+      document.getElementById("sn-name").value = s ? s.name : "";
+      const tid = s && s.target_id ? String(s.target_id)
+                                   : (snTargetOpts.length ? snTargetOpts[0].v : "");
+      snTargetPicker.set(snTargetOpts, tid);
+      snPicked = s ? (s.services || []).slice() : [];
+      renderServiceMenu();
+      document.querySelectorAll("#sn-checks input").forEach((x) => {
+        x.checked = !!(s && (s.checks || []).includes(x.value));
+      });
+      const t = (s && s.triggers) || {};
+      const sc = t.schedule || {};
+      const wh = t.webhook || {};
+      const th = t.threshold || {};
+      document.getElementById("sn-t-sched").checked = !!sc.enabled;
+      document.getElementById("sn-sched-min").value = sc.interval_min || 10;
+      const mode = sc.mode || "cron";
+      document.querySelectorAll('input[name="sn-sched-mode"]').forEach((r) => {
+        r.checked = r.value === mode;
+      });
+      // cron 里取 "分 时" 两段填到时间框
+      const cm = /^(\d{1,2})\s+(\d{1,2})\s/.exec(sc.cron || "");
+      if (cm) {
+        document.getElementById("sn-sched-at").value =
+          String(cm[2]).padStart(2, "0") + ":" + String(cm[1]).padStart(2, "0");
+      }
+      document.getElementById("sn-t-hook").checked = s ? !!wh.enabled : true;
+      document.getElementById("sn-t-th").checked = !!th.enabled;
+      snMetricPicker.set(Object.keys(snLabels).map((k) => ({ v: k, label: snLabels[k] })),
+                         th.metric || "error");
+      snOpPicker.set([{ v: ">", label: "高于" }, { v: "<", label: "低于" }], th.op || ">");
+      document.getElementById("sn-th-value").value = th.value ?? 5;
+      const acts = String((s && s.action) || "diagnose").split(",");
+      document.getElementById("sn-act-forward").checked = acts.includes("forward");
+      document.getElementById("sn-act-repair").checked = acts.includes("repair");
+      document.getElementById("sn-forward").value = (s && s.forward_url) || "";
+      document.getElementById("sn-fwd-wrap").hidden = !acts.includes("forward");
+      const pol = (s && s.policy) || {};
+      document.getElementById("sn-silence").value = pol.silence_min ?? 15;
+      const hours = pol.hours || [0, 24];
+      document.getElementById("sn-hour-start").value = hours[0];
+      document.getElementById("sn-hour-end").value = hours[1];
+      document.getElementById("sn-name").focus();
+    }
+
+    function collectForm() {
+      const services = (document.getElementById("sn-services").value || "")
+        .split(",").map((x) => x.trim()).filter(Boolean);
+      const checks = [...document.querySelectorAll("#sn-checks input:checked")].map((x) => x.value);
+      const tid = document.getElementById("sn-target").value;
+      return {
+        name: document.getElementById("sn-name").value.trim(),
+        target_id: tid ? Number(tid) : null,
+        services: services,
+        checks: checks,
+        triggers: {
+          schedule: (function () {
+            const mode = schedMode();
+            const at = (document.getElementById("sn-sched-at").value || "00:00").split(":");
+            return {
+              enabled: document.getElementById("sn-t-sched").checked,
+              mode: mode,
+              interval_min: Number(document.getElementById("sn-sched-min").value) || 10,
+              // 定点就拼成 cron:分 时 日 月 周
+              cron: (Number(at[1]) || 0) + " " + (Number(at[0]) || 0) + " * * *",
+            };
+          })(),
+          webhook: { enabled: document.getElementById("sn-t-hook").checked },
+          threshold: { enabled: document.getElementById("sn-t-th").checked,
+                       metric: document.getElementById("sn-th-metric").value,
+                       op: document.getElementById("sn-th-op").value,
+                       value: Number(document.getElementById("sn-th-value").value) || 0 },
+        },
+        action: [
+          document.getElementById("sn-act-forward").checked ? "forward" : "",
+          document.getElementById("sn-act-repair").checked ? "repair" : "",
+        ].filter(Boolean).join(",") || "diagnose",
+        forward_url: document.getElementById("sn-forward").value.trim(),
+        policy: {
+          silence_min: Number(document.getElementById("sn-silence").value) || 0,
+          hours: [Number(document.getElementById("sn-hour-start").value) || 0,
+                  Number(document.getElementById("sn-hour-end").value) || 24],
+        },
+      };
+    }
+
+    document.getElementById("sn-new").addEventListener("click", () => openForm(null));
+    document.getElementById("sn-act-forward").addEventListener("change", () => {
+      document.getElementById("sn-fwd-wrap").hidden =
+        !document.getElementById("sn-act-forward").checked;
+    });
+
+    // 多选菜单里点勾选框时不要关菜单(文档级 click 会把它收起来)
+    document.getElementById("sn-services-menu").addEventListener("click", (ev) => {
+      ev.stopPropagation();
+    });
+
+    document.getElementById("sn-services-btn").addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const menu = document.getElementById("sn-services-menu");
+      menu.hidden = !menu.hidden;
+    });
+
+    document.getElementById("snMask").addEventListener("click", (ev) => {
+      if (ev.target === document.getElementById("snMask")) {
+        document.getElementById("snMask").classList.remove("open");
+        snEditing = null;
+      }
+    });
+    document.getElementById("sn-cancel").addEventListener("click", () => {
+      document.getElementById("snMask").classList.remove("open");
+      snEditing = null;
+    });
+    document.getElementById("sn-save").addEventListener("click", async () => {
+      const body = collectForm();
+      const errEl = document.getElementById("snErr");
+      errEl.textContent = "";
+      if (!body.name) { errEl.textContent = "给这条接入起个名字吧"; return; }
+      if (!body.target_id) { errEl.textContent = "先选一个平台"; return; }
+      if (body.action.includes("forward") && !body.forward_url) {
+        errEl.textContent = "选了自动转发,得填一个转发地址";
+        return;
+      }
+      const url = snEditing ? ("/api/sentinels/" + snEditing) : "/api/sentinels";
+      const r = await fetch(url, {
+        method: snEditing ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        alert("保存失败:" + (j.detail || r.status));
+        return;
+      }
+      document.getElementById("snMask").classList.remove("open");
+      snEditing = null;
+      loadSentinels();
+    });
+
+    document.querySelectorAll(".view-tab").forEach((b) => {
+      b.addEventListener("click", () => switchView(b.dataset.view));
+    });
+
+    // 从诊断详情页「回到对话」跳回来时带 ?conversation=:恢复原会话,不落欢迎页
+    const fromUrl = new URLSearchParams(location.search).get("conversation");
+    // 刷新时不留旧会话:侧栏高亮和聊天区必须一致——要么都在某个会话里,要么都是空白。
+    // 之前 localStorage 里的 id 一直留着,侧栏把上次那条点亮了,聊天区却是欢迎页,
+    // 看起来像"高亮了一个空会话"。只有显式带 ?conversation= 才恢复。
+    if (!fromUrl) clearConversationId();
+    // 先把"我是谁"拿到手:会话要按账号查,否则换设备就是一片空白
+    (async () => {
+      try {
+        const r = await fetch("/api/whoami");
+        const j = await r.json();
+        if (j.user_id) ACCOUNT_UID = String(j.user_id);
+      } catch (e) { /* 拿不到就退回本机 id,不影响使用 */ }
+      // 一次性迁移:把本机旧随机 id 名下的会话搬到账号名下
+      const legacy = localStorage.getItem(SESSION_KEY);
+      if (ACCOUNT_UID && legacy && legacy !== ACCOUNT_UID) {
+        try {
+          await fetch("/api/conversations/claim", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ from: legacy, to: ACCOUNT_UID }),
+          });
+          localStorage.removeItem(SESSION_KEY);   // 迁完就别再用旧 id
+        } catch (e) { /* 迁移失败不影响使用,下次再试 */ }
+      }
+      loadConversations();            // 拿到身份后再拉列表
+    })();
+    // 首屏先按当前身份渲染一次(可能是旧 id),whoami 回来后上面会再拉一次
+    if (!ACCOUNT_UID) loadConversations();
+    if (fromUrl) switchConversation(fromUrl);
+    // 刷新后回到原来那一页(从诊断详情跳回来的例外:那是要回对话)
+    if (!fromUrl) {
+      let saved = null;
+      try { saved = localStorage.getItem("opspaw_view"); } catch (e) { saved = null; }
+      if (saved && saved !== "chat") switchView(saved);
+    }
+    // 只读账号:历史照翻,但不能开口。只改输入框的可用状态与提示语,
+    // 不加任何新元素——页面版式保持原样。真正的封条在服务端(/api/chat 直接 403)。
+    (async () => {
+      try {
+        const r = await fetch("/api/session", { headers: { Accept: "application/json" } });
+        if (!r.ok) return;
+        if (!(await r.json()).readonly) return;
+        READONLY = true;
+        setBusy(BUSY);                  // 走同一个出口,免得两处各改一半
+        inputEl.placeholder = "只读账号:可以看历史,不能对话";
+      } catch (e) { /* 取不到就按可对话渲染,服务端仍会拦 */ }
+    })();
+    inputEl.focus();
+  </script>
+</body>
+</html>

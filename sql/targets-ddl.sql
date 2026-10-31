@@ -12,7 +12,6 @@ SET NAMES utf8mb4;
 CREATE TABLE IF NOT EXISTS targets (
   id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '靶子主键',
   name        VARCHAR(128)    NOT NULL                COMMENT '靶子名称,如 otel-demo',
-  cluster     VARCHAR(64) NOT NULL DEFAULT '' COMMENT '所属集群',
   sources     JSON            NOT NULL                COMMENT '观测数据源数组,元素 {"type","url"}',
   enabled     INT UNSIGNED    NOT NULL DEFAULT 1      COMMENT '1=接入 0=保留配置暂不接入(为 Agent 侧接线预留)',
   created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '接入时间',

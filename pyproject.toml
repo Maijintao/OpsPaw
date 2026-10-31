@@ -3,10 +3,8 @@ name = "opspaw"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-    "accelerate>=1.0",
     "aiosqlite>=0.20",
     "asyncmy>=0.2.9",
-    "drain3>=0.9",
     "fastapi>=0.139.0",
     "httpx>=0.28.1",
     "jieba",
@@ -15,35 +13,45 @@ dependencies = [
     "langchain-mcp-adapters>=0.3.0",
     "langchain-openai>=1.3.5",
     "langchain-text-splitters>=1.1.2",
+    "langfuse>=4.14.0",
     "langgraph>=0.2",
     "langgraph-checkpoint-sqlite>=2.0",
-    "langfuse>=4.14.0",
-    "onnxruntime>=1.20",
-    "tokenizers>=0.20",
-    "matplotlib>=3.8",
     "mcp>=1.28.1",
-    "numpy>=1.26",
     "openai>=2.45.0",
-    "pandas>=2.2",
-    "peft>=0.13",
     "pydantic-settings>=2.14.2",
     "pymilvus[milvus-lite]>=3.0.0",
-    "python-box>=7.0",
+    # opsagent(归因三 agent)内部用 pytz 做时区换算,上游代码带进来的隐式依赖;
+    # 不声明的话新机器装完缺包,归因会整段退化成"确定性排序兜底"(2026-10-20 夜跑踩过)
     "pytz>=2024.1",
-    "pyyaml>=6",
+    # 归因模块是"导入即需要"这些包(不是运行时才用):缺一个就整段归因不可用,
+    # 而诊断会静默退回确定性排序,分数看着正常、其实没考 LLM。故从 ml 组提上来。
+    "python-box>=7.0",
     "scikit-learn>=1.5",
-    "sqlalchemy[asyncio]>=2.0.0",
+    "drain3>=0.9",
     "torch>=2.6",
-    "tqdm>=4.66",
     "transformers>=4.46",
+    "peft>=0.13",
+    "accelerate>=1.0",
+    "sqlalchemy[asyncio]>=2.0.0",
     "uvicorn[standard]>=0.51.0",
 ]
 
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "httpx2>=2.5.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+]
+# ch10 训练/导出重依赖:主应用运行时不需要,uv run --group ml 按需装
+ml = [
+    "torch>=2.6",
+    "transformers>=4.46",
+    "accelerate>=1.0",
+    "scikit-learn>=1.5",
+    "onnx>=1.17",
+    "onnxruntime>=1.20",
+    "tokenizers>=0.20",
 ]
 
 [tool.pytest.ini_options]

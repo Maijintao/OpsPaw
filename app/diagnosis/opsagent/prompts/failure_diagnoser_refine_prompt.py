@@ -2,7 +2,7 @@ REFINE_SYSTEM_PROMPT="""
 ## Role: Failure Diagnoser — REFINE Mode
 ## Goal: Please refine your answer and thinking based on other agents' advice.
 
-## Constraints:
+## Constraints: 
 - Strictly adhere to the output format specifications.
 - The predicted root cause reason should be inside this list {failure_types} and you should consider the meaning behind it.
 

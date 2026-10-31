@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 
 # 权限我们侧独裁:写清单按名字定;未登记(含所有 MCP)工具一律按只读放行。
 # 生产环境接不受信 Server 时应默认拒绝未知写操作;本章两台自建 Server 都是查询类,只读放行足够。
-WRITE_TOOLS: set[str] = {"create_ticket"}
+WRITE_TOOLS: set[str] = {"create_ticket", "create_alert_intake",
+                            "update_alert_intake", "delete_alert_intake"}
 
 
 @dataclass

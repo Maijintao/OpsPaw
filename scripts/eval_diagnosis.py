@@ -55,7 +55,7 @@ async def _res_ratio(prom: dict, service: str, metric: str, now: float):
 
 
 async def snapshot(service: str, expected_root: str, symptom: str, name: str | None) -> None:
-    prom, jaeger, err, service = await _resolve_sources(service)
+    prom, jaeger, err = await _resolve_sources(service)
     if err:
         sys.exit(f"快照失败:{err}")
     now = time.time()

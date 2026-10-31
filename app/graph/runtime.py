@@ -8,6 +8,7 @@ from langgraph.types import Command
 
 from app.config import settings
 from app.core import summarizer, titler
+from app.core.observability import attach_observability
 from app.db import repository
 from app.graph.build import build_graph
 
@@ -45,7 +46,7 @@ async def init_graph() -> None:
     await checkpointer.setup()
     _checkpointer = checkpointer
     # ch09:编译时挂一次 Langfuse 回调,全图自动 trace(未配置时原样返回,零依赖)
-    _graph = build_graph(checkpointer=checkpointer)
+    _graph = attach_observability(build_graph(checkpointer=checkpointer))
     logger.info("图已编译,checkpointer=%s", settings.checkpointer_db_path)
 
 
@@ -179,7 +180,6 @@ async def _stream_events(cid: int, stream_source) -> AsyncIterator[dict]:
     config = {"configurable": {"thread_id": str(cid)},
               "metadata": {"langfuse_session_id": str(cid)}}
     actions: list = []
-    pending_interrupt = None
     async for mode, chunk in get_graph().astream(
         stream_source, config, stream_mode=["messages", "updates"],
     ):
@@ -191,9 +191,16 @@ async def _stream_events(cid: int, stream_source) -> AsyncIterator[dict]:
                     yield {"type": "delta", "text": text}
         elif mode == "updates":
             if "__interrupt__" in chunk:
-                # 先完整结束图事件流，确保检查点已保存，再把确认卡交给用户。
-                pending_interrupt = chunk["__interrupt__"][0].value
-                continue
+                payload = chunk["__interrupt__"][0].value
+                # 带上 conversation_id:中断时不发 done 帧,前端要靠这个才知道续跑用哪个会话。
+                # ch08:负载按中断类型透传(select_service 带 services,confirm_ticket 带 preview),
+                # 前端按 kind 分发。
+                ev = {"type": "interrupt", "kind": payload.get("type", ""), "conversation_id": cid}
+                for k in ("services", "preview"):
+                    if payload.get(k) is not None:
+                        ev[k] = payload[k]
+                yield ev
+                return
             for node, upd in chunk.items():
                 if not isinstance(upd, dict):
                     continue
@@ -210,13 +217,6 @@ async def _stream_events(cid: int, stream_source) -> AsyncIterator[dict]:
                             yield {"type": "tool", "name": name}
                 if upd.get("suggested_actions"):
                     actions.extend(upd["suggested_actions"])
-    if pending_interrupt is not None:
-        event = {"type": "interrupt", "kind": pending_interrupt.get("type", ""), "conversation_id": cid}
-        for key in ("services", "preview"):
-            if pending_interrupt.get(key) is not None:
-                event[key] = pending_interrupt[key]
-        yield event
-        return
     if actions:
         yield {"type": "actions", "items": dedup_actions(actions)}
     yield {"type": "done", "conversation_id": cid}

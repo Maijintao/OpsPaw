@@ -27,7 +27,6 @@ import uuid
 
 from pydantic import BaseModel, Field
 
-from app.config import settings
 from app.core.llm import structured
 from app.db import repository
 from app.repair import catalog, gateway, plans, symptom
@@ -35,15 +34,17 @@ from app.repair import catalog, gateway, plans, symptom
 logger = logging.getLogger("app.repair")
 
 _RUNS: dict[str, dict] = {}
-_TASKS: dict[str, asyncio.Task] = {}
 MAX_RUNS = 100   # 同诊断 runner:内存只做热缓存,终态落库
 
 # 修复单全局并发闸。写动作本身有连接器级单并发锁(plans._LOCKS),这里是防
 # 多单同时跑 scene/verify 的只读查询把连接器长轮询队列(每连接器 8 个槽)占满。
-_SEM = asyncio.Semaphore(settings.max_agent_steps)
+MAX_CONCURRENT_REPAIRS = 2
+_SEM = asyncio.Semaphore(MAX_CONCURRENT_REPAIRS)
 
 # scene / verify 两个阶段的 LLM 决策步数上限(每步一次结构化调用)。
 # 4 = 最少 1 次 inspect + 最多 3 次深挖(日志/事件/资源),再多就是模型在绕圈。
+MAX_SCENE_STEPS = 4
+MAX_VERIFY_STEPS = 4
 
 # scene / verify 允许 LLM 用的只读动作:能力 = 服务端目录 ∩ 只读,写动作不在这里,
 # 它有专属的决策步(FixDecision)+ 状态机执行,模型没有直接执行写动作的入口。
@@ -70,16 +71,6 @@ def _emit(run: dict, stage: str, detail: str) -> None:
 
 def get(repair_id: str) -> dict | None:
     return _RUNS.get(repair_id)
-
-
-def stop(repair_id: str) -> bool:
-    """只允许在现场只读调查阶段停止；写操作开始后必须等验证完成。"""
-    run = _RUNS.get(repair_id)
-    task = _TASKS.get(repair_id)
-    if run is None or task is None or task.done() or run.get("stage") != "scene":
-        return False
-    task.cancel()
-    return True
 
 
 async def start_for_diagnosis(diag_id: str) -> dict:
@@ -338,7 +329,7 @@ def start(diag_run: dict, target_id: int, target_name: str, connector_id: str,
         terminal = [k for k, v in _RUNS.items() if v.get("status") in ("done", "failed")]
         for k in terminal[:len(_RUNS) - MAX_RUNS]:
             _RUNS.pop(k, None)
-    _TASKS[repair_id] = asyncio.create_task(_safe_run(run, diag_run))
+    asyncio.create_task(_safe_run(run, diag_run))
     return repair_id
 
 
@@ -347,10 +338,6 @@ async def _safe_run(run: dict, diag_run: dict) -> None:
         async with _SEM:
             run["result"] = await _run(run, diag_run)
         run["status"] = "done"
-    except asyncio.CancelledError:
-        run["status"] = "stopped"
-        run["result"] = run.get("result") or {"verdict": "stopped"}
-        _emit(run, "stopped", "现场只读调查已停止，未发起修复写操作")
     except Exception as e:  # noqa: BLE001  修复任务不许静默死,错误如实落终态
         logger.exception("修复任务失败 service=%s", run.get("service"))
         run["status"] = "failed"
@@ -372,7 +359,6 @@ async def _safe_run(run: dict, diag_run: dict) -> None:
                                        (run.get("result") or {}).get("action"))
         except Exception:  # noqa: BLE001
             logger.warning("事故联动(修复)失败 repair=%s", run.get("id"), exc_info=True)
-        _TASKS.pop(run.get("id"), None)
 
 
 def _diag_context(diag_run: dict) -> str:
@@ -482,7 +468,7 @@ async def _run(run: dict, diag_run: dict) -> dict:
     scene_notes.append("功能开关现场:" + line)
     scene_summary = await _read_loop(
         run, "scene", service, diag_ctx + "\n\n指标侧复检:" + (sym.get("reason") or ""),
-        settings.max_agent_steps, scene_notes)
+        MAX_SCENE_STEPS, scene_notes)
 
     # ---- fix:修复执行(决策在 LLM,执行在状态机) ----
     _emit(run, "fix", "修复执行中:agent 决策修复动作…")
@@ -564,7 +550,7 @@ async def _run(run: dict, diag_run: dict) -> dict:
                       "注意:这些是机器快照,你要亲自再查一遍才算数。")
     verify_notes: list[str] = []
     await _read_loop(run, "verify", service, diag_ctx + "\n\n" + verify_ctx,
-                     settings.max_agent_steps, verify_notes)
+                     MAX_VERIFY_STEPS, verify_notes)
 
     # ---- report:写回执 ----
     _emit(run, "report", "写回执中:agent 整理修复回执…")

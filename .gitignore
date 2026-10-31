@@ -1,49 +1,6 @@
-.venv/
-.deployment/
-__pycache__/
 *.pyc
+__pycache__/
+.venv/
 .env
-# .env 的各种变体(备份、按环境分的副本)同样含真实密钥,必须一起挡住。
-# 只放行 .env.example —— 它是对外发布的模板,里面只有占位符。
-.env.*
-!.env.example
-.pytest_cache/
-.superpowers/
-data/*.db*
-data/*.sqlite*
-dev-notes/
-log/
-logs/
-*.pid
-data/ch10/*
-!data/ch10/reports
-
-# 运行日志:后台页发起的作业与 dev.sh 启动日志,本地产物不入库
-data/*.log
-data/ch04/*.log
-
-# 跑批产物与 trace 录像:体积以 GB 计,只留在机器上
-# cases.json / known_incidents.json 是题库和故障窗登记,要进版本库
 data/aiopslab/runs/
-data/aiopslab/recordings*/
-data/aiopslab/env/
-data/aiopslab/flagd_snapshot.json
-*.log
-
-# 本机凭据、恢复副本和系统产物
-*.pem
-*.key
-.snapshots/
-*.git.bundle
-*.git-backup*
-
-# 工具与系统产物
-.DS_Store
-.workbuddy/
-.workbuddy-ai/
-
-
-# 运行中的故障窗、模型经验与重建画像不作为源码上传。
-data/known_incidents.json
-app/diagnosis/opsagent/reflection_data/
-data/iforest/*.pkl
+log/

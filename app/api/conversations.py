@@ -1,4 +1,6 @@
 """ch07 验收配套:会话列表 + 历史消息回载 + 删除会话(前端多会话切换用)。"""
+import os
+
 from fastapi import APIRouter, HTTPException
 
 from app.db import repository
@@ -8,7 +10,17 @@ router = APIRouter()
 
 
 @router.get("/api/conversations")
-async def list_conversations(user_id: str):
+async def list_conversations(user_id: str | None = None):
+    """会话列表。user_id 可省略 —— 省了就按当前登录身份查。
+
+    为什么要能省(2026-10-27):前端首屏原本必须**先问 /api/whoami 拿身份、再拉列表**,
+    于是页面先按本机旧 id 画一次(空的)、等往返回来才画第二次。服务器在澳洲,
+    一个往返一秒上下,用户看到的就是"刚进来没有会话,过一会儿才出来"——
+    只读访客会以为这里压根没有历史记录,直接关掉。
+    身份本来就只由登录决定(见 /api/whoami),让服务端自己认,前端一次请求就够。
+    """
+    if not user_id:
+        user_id = os.environ.get("ACCESS_USER", "admin")
     items = await repository.list_conversations(user_id)
     return {"items": items}
 
@@ -33,7 +45,6 @@ async def list_messages(conversation_id: int):
         {"role": m.role, "content": m.content or "",
          # meta.suggested_actions 回传给前端重建动作卡(诊断卡/服务卡/按钮),不回传会丢
          "actions": ((m.meta or {}).get("suggested_actions")) or None,
-         "tools": ((m.meta or {}).get("tools")) or None,
          # 引用角标 [n] 的原始出处:不回传的话回载后只剩纯文本 "[1]",
          # 既没有珊瑚色上标样式,也点不出来源浮层(直播时有、刷新就没)
          "citations": ((m.meta or {}).get("citations")) or None,

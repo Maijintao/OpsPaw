@@ -125,3 +125,5 @@ def test_p95_spread_is_iqr_of_historical_windows():
     assert deviation.p95_spread_ms({"_dist": {"latency": _D}}) == 20.0
     assert deviation.p95_spread_ms({"_dist": {"latency": type("X", (), {"values": [1.0]})}}) == 0.0
     assert deviation.p95_spread_ms({}) == 0.0
+
+

@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 
 def validate_json_schema(data):
-    return 1.0
+    return 1.0 
 
 def save_reflection_data(reflection):
     with open("reflections.json", "a") as f:
@@ -107,7 +107,7 @@ def llm_invoke_batch(model, tokenizer, system_prompt, user_prompts, max_token=51
             **model_inputs,
             max_new_tokens=max_token,
             temperature=temperature,
-            do_sample=False
+            do_sample=False 
         )
 
         generated_ids = [
@@ -117,13 +117,13 @@ def llm_invoke_batch(model, tokenizer, system_prompt, user_prompts, max_token=51
         responses = [
             tokenizer.decode(output_ids, skip_special_tokens=True) for output_ids in generated_ids
         ]
-
+        
         all_responses.extend(responses)
 
     return all_responses
 
 def generate_random_string(length=8):
-
+    
     characters = string.ascii_letters + string.digits
     random_string = ''.join(random.choices(characters, k=length))
     return random_string
@@ -195,7 +195,7 @@ def llm_invoke_batch_vllm(llm, tokenizer, system_prompt, user_prompts, max_token
             response = output.outputs[0].text.strip()
             all_responses.append(response)
 
-    return all_responses
+    return all_responses    
 
 def clear_inference_memory():
     gc.collect()

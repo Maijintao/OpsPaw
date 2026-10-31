@@ -44,7 +44,7 @@ class ADAgent(BaseAgent):
             vector_db=vector_db
         )
         self.agent_context.gen_symptom_system_prompt += """
-        ##Examples:
+        ##Examples: 
         1.
         <symptoms>
         - Around 18:30:00, the system experienced a simultaneous latency surge at the ingress layer: IG01 and IG02 reported extreme tail latency (MaxLatency ≈ 60001 ms) with more than 100 delayed requests each. Concurrently, Tomcat02 processed about 586 requests with maximum latency reaching 89 s, indicating that frontend requests were heavily queued and timing out.
@@ -56,8 +56,8 @@ class ADAgent(BaseAgent):
         - The most affected chain was IG → Tomcat02 → MG01/MG02 → dockerB1/Redis/Mysql, covering both read and write paths. The combination of entrance queuing, GC pauses, and backend I/O congestion led to widespread request slowdown and cascading timeouts.
         - Overall, the incident unfolded in three stages: (1) trigger—ingress overload with concurrent GC and I/O contention; (2) propagation—latency spread across middleware and backend; (3) recovery—delayed cache rebuilds and I/O cleanup causing intermittent tail spikes before stabilization.
         </symptoms>
-
-        2.
+        
+        2. 
         <symptoms>
         - At 20:04:00, the disk read latency for MySQL (Mysql01) spiked significantly, which was followed shortly by a dramatic increase in disk activity across several other components including Redis and Tomcat instances. The pattern suggests a significant load on the storage system that began to impact downstream services.
         - In the same time window, logs from Tomcat02 at 20:25:23 indicate frequent garbage collection events, which contributed to a noticeable delay in request processing. This suggests that GC cycles were negatively affecting the throughput of Tomcat services during peak load.
@@ -66,7 +66,7 @@ class ADAgent(BaseAgent):
         - The 20:12:00 mark showed a notable increase in the number of requests across all affected services, which seems to align with both the increase in disk usage (shown in metrics) and the spike in processing time (indicated in the trace logs). This could signify that the root cause was the resource saturation affecting storage and memory, which propagated through the system.
         - Based on the convergence of metrics, logs, and traces, the root cause seems to have emerged between 20:04:00 and 20:14:00, during which the system's performance was consistently degraded due to resource contention, likely triggered by disk I/O and memory issues.
         </symptoms>
-        3.
+        3. 
         <symptoms>
         - At **10:26:00**, MySQL metrics such as "Sort Range", "Opened Tables", and "Table open cache misses" spiked significantly, indicating a substantial increase in database load. These spikes were accompanied by high deviation values (up to 7.7σ), pointing to potential resource exhaustion in MySQL, which could have led to slower query execution and a backlog in database processing.
         - Around the same time, **MySQL01** experienced a significant increase in transaction lock memory usage at **10:28:00**, highlighting a possible bottleneck in transaction handling. This caused further delays in database operations, compounding the earlier database-related issues.
@@ -78,7 +78,7 @@ class ADAgent(BaseAgent):
         </symptoms>
         """
         self.agent_context.reflect_system_prompt += """
-        ##Examples:
+        ##Examples: 
         1.
         <symptoms>
         - Around 18:30:00, the system experienced a simultaneous latency surge at the ingress layer: IG01 and IG02 reported extreme tail latency (MaxLatency ≈ 60001 ms) with more than 100 delayed requests each. Concurrently, Tomcat02 processed about 586 requests with maximum latency reaching 89 s, indicating that frontend requests were heavily queued and timing out.
@@ -90,8 +90,8 @@ class ADAgent(BaseAgent):
         - The most affected chain was IG → Tomcat02 → MG01/MG02 → dockerB1/Redis/Mysql, covering both read and write paths. The combination of entrance queuing, GC pauses, and backend I/O congestion led to widespread request slowdown and cascading timeouts.
         - Overall, the incident unfolded in three stages: (1) trigger—ingress overload with concurrent GC and I/O contention; (2) propagation—latency spread across middleware and backend; (3) recovery—delayed cache rebuilds and I/O cleanup causing intermittent tail spikes before stabilization.
         </symptoms>
-
-        2.
+        
+        2. 
         <symptoms>
         - At 20:04:00, the disk read latency for MySQL (Mysql01) spiked significantly, which was followed shortly by a dramatic increase in disk activity across several other components including Redis and Tomcat instances. The pattern suggests a significant load on the storage system that began to impact downstream services.
         - In the same time window, logs from Tomcat02 at 20:25:23 indicate frequent garbage collection events, which contributed to a noticeable delay in request processing. This suggests that GC cycles were negatively affecting the throughput of Tomcat services during peak load.
@@ -100,7 +100,7 @@ class ADAgent(BaseAgent):
         - The 20:12:00 mark showed a notable increase in the number of requests across all affected services, which seems to align with both the increase in disk usage (shown in metrics) and the spike in processing time (indicated in the trace logs). This could signify that the root cause was the resource saturation affecting storage and memory, which propagated through the system.
         - Based on the convergence of metrics, logs, and traces, the root cause seems to have emerged between 20:04:00 and 20:14:00, during which the system's performance was consistently degraded due to resource contention, likely triggered by disk I/O and memory issues.
         </symptoms>
-        3.
+        3. 
         <symptoms>
         - At **10:26:00**, MySQL metrics such as "Sort Range", "Opened Tables", and "Table open cache misses" spiked significantly, indicating a substantial increase in database load. These spikes were accompanied by high deviation values (up to 7.7σ), pointing to potential resource exhaustion in MySQL, which could have led to slower query execution and a backlog in database processing.
         - Around the same time, **MySQL01** experienced a significant increase in transaction lock memory usage at **10:28:00**, highlighting a possible bottleneck in transaction handling. This caused further delays in database operations, compounding the earlier database-related issues.

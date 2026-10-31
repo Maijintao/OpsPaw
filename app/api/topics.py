@@ -1,50 +1,28 @@
-"""独立主题分类推理接口。问题池分布和批量落库等 RAG 数据接口待数据表就绪后接入。"""
-import httpx
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
-from app.config import settings
-from app.core.taxonomy import TOPIC_CLASSES
+"""ch10 主题分布 API:飞轮后台看各类目问题量,决定先补哪块知识。只读。
+
+分布只给每类三条样例(一眼看出这类装的是什么);要看全,点类目名进问题列表,
+那边按类目分页列出全部归类结果——同一批 topic_classifications,两种粒度。
+"""
+from fastapi import APIRouter, HTTPException, Query
+
+from app.core.taxonomy import TOPIC_NAMES
 from app.db import repository
 
-router = APIRouter(prefix="/api/topics", tags=["topics"])
+router = APIRouter()
 
-class ClassifyBody(BaseModel):
-    texts: list[str] = Field(min_length=1)
 
-@router.get("")
-async def topics():
-    online = False
-    try:
-        async with httpx.AsyncClient(timeout=settings.tool_default_timeout, trust_env=False) as client:
-            response = await client.get(settings.classifier_base_url.rstrip("/") + "/healthz")
-            online = response.is_success
-    except httpx.HTTPError:
-        pass
-    try:
-        distribution = await repository.topic_distribution()
-        pool_ready = True
-        pool_error = None
-    except Exception as exc:
-        distribution = None
-        pool_ready = False
-        pool_error = f"{type(exc).__name__}: {exc}"
-    return {"topics": [{"name": item.name, "boundary": item.boundary,
-                        "examples": list(item.examples), "severity": item.severity}
-                       for item in TOPIC_CLASSES],
-            "classifier_online": online,
-            "pool_ready": pool_ready,
-            "pool": distribution,
-            "pool_note": None if pool_ready else f"问题池暂时读不到：{pool_error}"}
+@router.get("/api/topics/distribution")
+async def distribution():
+    return await repository.topic_distribution()
 
-@router.post("/classify")
-async def classify(body: ClassifyBody):
-    try:
-        async with httpx.AsyncClient(timeout=settings.tool_default_timeout, trust_env=False) as client:
-            response = await client.post(settings.classifier_base_url.rstrip("/") + "/classify",
-                                         json={"texts": body.texts})
-            response.raise_for_status()
-            return response.json()
-    except httpx.HTTPStatusError as exc:
-        raise HTTPException(502, "分类器返回错误") from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(503, "分类器未启动或模型文件未就绪") from exc
+
+@router.get("/api/topics/questions")
+async def questions(
+    label: str = Query(description="权威类目名,须在 17 类之内"),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+):
+    # 类目名不在权威表里就是笔误或旧链接:400 说清楚,别静静回一页空列表
+    if label not in TOPIC_NAMES:
+        raise HTTPException(400, f"未知类目「{label}」,权威类目共 {len(TOPIC_NAMES)} 类")
+    return await repository.topic_questions(label, page=page, size=size)

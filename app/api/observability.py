@@ -65,10 +65,8 @@ def _cost_block() -> dict:
     total_tokens = sum(int(row.get("tokens") or 0) for row in rows)
     total_requests = sum(int(row.get("count") or 0) for row in rows)
     for row in rows:
-        if row.get("avg_tokens") is None:
-            row["avg_tokens"] = int(row.get("tokens") or 0) // max(int(row.get("count") or 0), 1)
-        if row.get("share") is None:
-            row["share"] = round((int(row.get("tokens") or 0) / total_tokens), 4) if total_tokens else 0
+        row["avg_tokens"] = int(row.get("tokens") or 0) // max(int(row.get("count") or 0), 1)
+        row["share"] = round((int(row.get("tokens") or 0) / total_tokens), 4) if total_tokens else 0
     read_note = (report.get("read_notes") or {}).get("cost_by_intent") if rows else None
     return block | {
         "present": bool(rows), "status": "ok" if rows else "missing",
@@ -79,7 +77,7 @@ def _cost_block() -> dict:
         # 最烧钱那一路:脚本按 tokens 降序写的,取第一行就是,不重排
         "top": rows[0] if rows else None,
         "read_note": read_note,
-        "hint": None if rows else "没有当前 on-call 意图的成本数据（没数据）。旧场景数据已过滤；先问几句运维问题产生 trace，再重跑。",
+        "hint": None if rows else "没有当前 on-call 意图的成本数据。旧场景数据已过滤；先用运维问题产生 trace，再重跑。",
     }
 
 

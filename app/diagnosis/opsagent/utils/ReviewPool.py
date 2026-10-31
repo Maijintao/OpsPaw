@@ -4,7 +4,7 @@ class Review:
         self.target = target
         self.comment = comment
         self.accept = accept  # True: accept，False: have comments
-        self.round_num = round_num
+        self.round_num = round_num  
 
     def rev2str(self) -> str:
         return (
@@ -14,7 +14,7 @@ class Review:
             f"Accept: {self.accept}\n\n"
         )
 
-
+    
 class ReviewPool:
     def __init__(self):
         self.reviews: list[Review] = []

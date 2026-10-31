@@ -218,10 +218,12 @@ async def _safe_run(run: dict, service: str, symptom: str,
             await repository.save_diagnosis_run(run)
         except Exception:  # noqa: BLE001  落库失败已在 save 内告警,这里再兜一层
             logger.warning("诊断任务 %s 存档异常", run.get("id"), exc_info=True)
+        # 事故中心联动:诊断终态推进所属事故(状态/根因/同根因并单)。
+        # 增强信号,失败只记日志;懒加载避免 runner ↔ api 的导入环。
         try:
-            from app.api import incidents
-            await incidents.on_diagnosed(run.get("id", ""), run)
-        except Exception:  # noqa: BLE001  事故联动失败不影响诊断结果
+            from app.api import incidents as _incidents
+            await _incidents.on_diagnosed(run["id"], run)
+        except Exception:  # noqa: BLE001
             logger.warning("事故联动(诊断)失败 diag=%s", run.get("id"), exc_info=True)
 
 
@@ -235,7 +237,7 @@ async def _run(run: dict, service: str, symptom: str,
     # 起手诊断。运维不该被要求先自己定位到服务——"我要是知道,要你干什么"。
     if not service:
         _emit(run, "detect", "未指定服务,先扫描平台找异常…")
-        detect_info = await detect.scan_platforms(platform=platform)
+        detect_info = await detect.scan_platforms()
         # 扫描时的全平台画像就地取走(含历史分布内部对象,只在本进程内传):
         # 同一次诊断里"谁异常"只算一次——之前扫描算一遍、进诊断又重算一遍,两次隔
         # 几分钟,临界时候说翻脸就翻脸(实测:recommendationCacheFailure 扫描时
@@ -837,7 +839,7 @@ async def _run(run: dict, service: str, symptom: str,
     # 源码原样保留在 opsagent/,本层喂活数据并桥接 LLM)。编排序列:异常检测/分诊/
     # 根因定位 think → 两两交叉评审 → refine → Judge 终裁。旧的单次归因/白名单补查/
     # 门禁/证伪随本次替换退役(备份:~/Desktop/OpsPaw_归因板块备份_20261015/)。
-    _emit(run, "attribute", "证据交 OpsAgent 三 agent 协作归因(异常检测→分诊→根因定位,交叉评审)…")
+    _emit(run, "attribute", "证据由异常哨兵、故障诊断、根因侦探三个 agent 协商归因…")
     _loki_src, _loki_target = await _loki_for(service, platform)
     _attr_err: str | None = None
     try:

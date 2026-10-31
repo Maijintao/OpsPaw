@@ -482,6 +482,18 @@ def localize(graph: ServiceGraph, devs: dict[str, ServiceDeviation], symptom: st
         """图上有服务调它(被调侧)。纯流量源(load-generator 这类只出不进)不算。"""
         return any(b == svc for (_, b) in graph.edges)
 
+    def _is_pure_caller(svc: str) -> bool:
+        """只出不进:发过请求,但从没被调用。压测机、浏览器探针都属于这类。
+
+        它们不可能是根因——自己报错只能是别人坏了的传导。而它们的失败往往归不到边上
+        (2026-10-26 实测:load-generator 的客户端 span 名字就是 "POST",不带被调方,
+        24 笔失败在服务级聚合里成了第一名,把 cartFailure 答成了 load-generator)。
+
+        只在"确实见过它发请求"时才算纯调用方:图不完整时不误伤。
+        """
+        has_out = any(a == svc for (a, _) in graph.edges)
+        return has_out and not _has_inbound(svc)
+
     def _corroborated(svc: str, d: ServiceDeviation) -> bool:
         """指认佐证闸(2026-10-25 夜跑教训:四道题+对照组全被怪罪到 flagd——高入度
         共享中间件是"怪罪磁铁",OpenRCA 2.0/图增强 RCA 的共识:单调用方的指认
@@ -505,6 +517,10 @@ def localize(graph: ServiceGraph, devs: dict[str, ServiceDeviation], symptom: st
             d = ServiceDeviation(service=svc)
             if was_seen:
                 d.abnormal_dims.add("shadow")
+        # 纯调用方(只出不进)不可能是根因:它报错只能是别人坏了的传导。
+        # 这条比"锚点免检"更优先——锚点也可能是压测机(2026-10-26 cartFailure 实测)。
+        if svc != symptom and _is_pure_caller(svc):
+            continue
         if not d.abnormal and direction not in ("error_ref", "scan_anchor",
                                                 "edge_blame", "change") \
                 and svc != symptom:

@@ -49,7 +49,7 @@ def to_response_tensors(tokenizer, texts, device):
     return out
 
 def get_policy_first_device(vh_model: AutoModelForCausalLMWithValueHead):
-    base = vh_model.pretrained_model
+    base = vh_model.pretrained_model 
     prefer_keys = ["embed_tokens", "wte", "word_embeddings", "tok_embeddings", "embeddings"]
     for name, module in base.named_modules():
         w = getattr(module, "weight", None)
@@ -126,15 +126,15 @@ def fine_tune_offline_ppo(
         batch_size=accumulation_steps * mini_batch_size,
         gradient_accumulation_steps=accumulation_steps,
         mini_batch_size=mini_batch_size,
-        cliprange=0.1,
-        cliprange_value=0.2,
-        max_grad_norm=0.3,
-        gamma=1.0,
-        lam=0.95,
-        adap_kl_ctrl=True,
-        init_kl_coef=0.2,
-        target_kl=4.0,
-        horizon=10000,
+        cliprange=0.1,        
+        cliprange_value=0.2,          
+        max_grad_norm=0.3,          
+        gamma=1.0,                 
+        lam=0.95,                   
+        adap_kl_ctrl=True,          
+        init_kl_coef=0.2,           
+        target_kl=4.0,              
+        horizon=10000,                
         accelerator_kwargs={"device_placement": False},
     )
 
@@ -168,8 +168,8 @@ def fine_tune_offline_ppo(
         print("Last PPO step stats:", last_res)
 
     os.makedirs(save_path, exist_ok=True)
-    ppo_trainer.save_pretrained(save_path)
-    ppo_trainer.model.pretrained_model.save_pretrained(save_path)
+    ppo_trainer.save_pretrained(save_path)          
+    ppo_trainer.model.pretrained_model.save_pretrained(save_path)  
     print("PPO adapter saved to:", save_path)
 
 
@@ -183,7 +183,7 @@ paths = {
 }
 
 ds = PPODataset(paths)
-df = ds.load()
+df = ds.load() 
 if len(df) == 0:
     print(f"[{agent_name}] No samples, skip.")
     exit(0)
@@ -192,9 +192,9 @@ if len(df) == 0:
 print(f"loading base model/tokenizer ...")
 base_model = AutoModelForCausalLM.from_pretrained(
     cfg.llm_setting_agent.model_path,
-    torch_dtype=torch.bfloat16,
+    torch_dtype=torch.bfloat16,       
     attn_implementation="sdpa",
-    device_map="auto",
+    device_map="auto",                
 )
 tokenizer = AutoTokenizer.from_pretrained(cfg.llm_setting_agent.model_path)
 if tokenizer.pad_token is None:
@@ -203,17 +203,17 @@ tokenizer.padding_side = "right"
 
 # ref_model must be a PreTrainedModelWrapper
 print(f"loading ref model ...")
-ref_model = AutoModelForCausalLMWithValueHead.from_pretrained(
+ref_model = AutoModelForCausalLMWithValueHead.from_pretrained(    
     cfg.llm_setting_agent.model_path,
     torch_dtype=torch.bfloat16,
     attn_implementation="sdpa",
     device_map="auto",
 )
-ref_model.pretrained_model.resize_token_embeddings(len(tokenizer))
-ref_model.pretrained_model.config.pad_token_id = tokenizer.eos_token_id
+ref_model.pretrained_model.resize_token_embeddings(len(tokenizer))          
+ref_model.pretrained_model.config.pad_token_id = tokenizer.eos_token_id     
 
-ref_model.eval()
-for p in ref_model.parameters():
+ref_model.eval()                                           
+for p in ref_model.parameters():                           
     p.requires_grad_(False)
 
 # ---- batch ----
@@ -228,7 +228,7 @@ print(f"[{agent_name}] Prev adapter: {prev_peft_path or 'None'}")
 
 if iteration > 1:
     # iteration > 1
-    print(f"[{agent_name}] get prev adapter: {prev_peft_path}")
+    print(f"[{agent_name}] get prev adapter: {prev_peft_path}") 
     model = PeftModel.from_pretrained(base_model, prev_peft_path, is_trainable=True)
     model = AutoModelForCausalLMWithValueHead.from_pretrained(model)
 else:
@@ -239,8 +239,8 @@ else:
         base_model,
         peft_config=peft_cfg,
     )
-    model.pretrained_model.save_pretrained(init_dir)
-    print(f"[{agent_name}] Init adapter saved to {init_dir}")
+    model.pretrained_model.save_pretrained(init_dir)  
+    print(f"[{agent_name}] Init adapter saved to {init_dir}") 
 
 model.pretrained_model.resize_token_embeddings(len(tokenizer))
 

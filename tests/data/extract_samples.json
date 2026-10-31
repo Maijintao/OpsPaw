@@ -1,0 +1,22 @@
+[
+  {
+    "text": "服务 3003 内存爆了,帮我重启",
+    "expected": {"service_id": "3003", "request_type": "重启"}
+  },
+  {
+    "text": "1001 刚发完版本就挂了,先回滚吧",
+    "expected": {"service_id": "1001", "request_type": "回滚"}
+  },
+  {
+    "text": "流量翻倍了,给 4004 扩容一下实例",
+    "expected": {"service_id": "4004", "request_type": "扩容"}
+  },
+  {
+    "text": "你们这值班系统净误报告警,我要投诉",
+    "expected": {"service_id": null, "request_type": "投诉"}
+  },
+  {
+    "text": "服务收到了告警,就是想问问后续排查要注意啥",
+    "expected": {"service_id": null, "request_type": "其他"}
+  }
+]

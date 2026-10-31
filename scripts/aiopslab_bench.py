@@ -44,8 +44,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CASES_PATH = ROOT / "data" / "aiopslab" / "cases.json"
 RUNS_DIR = ROOT / "data" / "aiopslab" / "runs"
 
-SSH_HOST = os.environ.get("OPSPAW_BENCH_SSH_HOST", "")
-FLAGD_PATH = os.environ.get("OPSPAW_BENCH_FLAGD_PATH", "")
+SSH_HOST = "ubuntu@42.193.188.243"
+FLAGD_PATH = "/home/ubuntu/opentelemetry-demo/src/flagd/demo.flagd.json"
 
 SETTLE_S = 180
 RECOVER_S = 240
@@ -56,7 +56,7 @@ RECOVER_S = 240
 # 所以复位后必须核对"流量是否真的回来了",没回来就把注入窗继续延长(登记到回落为止)。
 # 这两个数是策略(可命令行覆盖):容差 1.2 = 允许比注入前高 20%,再高就算没洗干净。
 RESIDUAL_TOL = 1.2
-RESIDUAL_MAX_WAIT_S = 1800
+RESIDUAL_MAX_WAIT_S = 600
 # 压测机内存水位上限(%):它是 Chromium,泄漏到限额就卡死、流量归零。留 20% 余量,
 # 和容器驱逐的常用档位同档——不是判据阈值,是运维护栏。
 LOADGEN_MEM_LIMIT_PCT = 80.0
@@ -157,8 +157,6 @@ def _ssh_py(code: str, timeout_s: int = 60) -> str:
     的形态下会无限期阻塞,timeout 形同虚设。真实代价:整轮跑批被钉死 93 分钟,期间
     loadGeneratorFloodHomepage 一直开着,靶子白泡在洪峰里。所以改成显式 Popen + kill,
     ssh 侧再加 BatchMode / ServerAlive 三重保底——跑批卡死比跑批失败糟糕得多。"""
-    if not SSH_HOST or not FLAGD_PATH:
-        raise RuntimeError("请先配置 OPSPAW_BENCH_SSH_HOST 和 OPSPAW_BENCH_FLAGD_PATH")
     proc = subprocess.Popen(
         ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
          "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=3",
@@ -307,6 +305,62 @@ async def diagnose(timeout_s: int = DIAG_TIMEOUT_S) -> dict:
 SERVICE_BASE_URL = os.environ.get("OPSPAW_BASE_URL", "http://127.0.0.1:8000")
 
 
+PROM_URL = os.environ.get("BENCH_PROM", "http://127.0.0.1:19090")
+
+
+async def _prom_scalar(expr: str, at: float | None = None) -> float | None:
+    """查一个标量。拿不到就 None,不抛——校验是增强,不能挡跑批。"""
+    import httpx
+    params = {"query": expr}
+    if at is not None:
+        params["time"] = at
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(f"{PROM_URL}/api/v1/query", params=params)
+            rows = ((r.json() or {}).get("data") or {}).get("result") or []
+    except Exception:  # noqa: BLE001
+        return None
+    if not rows:
+        return None
+    try:
+        return float(rows[0]["value"][1])
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+
+
+async def measure_injection(gt: str) -> dict:
+    """注入之后,目标服务在遥测里到底动了没有。
+
+    为什么要有:2026-10-24 的 cartFailure,整个 300s 窗口里只有 2 笔调用 cart 失败,
+    与基线无差异——题目本身没造出可观测故障,却算我们答错。判分前先把这件事记下来,
+    数字摆在那,不替谁开脱,也不让"看不见的故障"混进能力评估。
+
+    只报数字,不判好坏:错误数、时延各给"窗内 / 注入前等长窗"两个值。
+    """
+    now = time.time()
+    base = now - 600
+    err = ('sum(increase(traces_span_metrics_calls_total'
+           '{service_name="%s",status_code="STATUS_CODE_ERROR"}[300s]))' % gt)
+    p95 = ('histogram_quantile(0.95, sum by (le) (rate('
+           'traces_span_metrics_duration_milliseconds_bucket'
+           '{service_name="%s"}[300s])))' % gt)
+    out = {
+        "gt_error_win": await _prom_scalar(err),
+        "gt_error_base": await _prom_scalar(err, at=base),
+        "gt_p95_win": await _prom_scalar(p95),
+        "gt_p95_base": await _prom_scalar(p95, at=base),
+    }
+    ew, eb = out["gt_error_win"], out["gt_error_base"]
+    pw, pb = out["gt_p95_win"], out["gt_p95_base"]
+    # "没有可见变化"只认两件事同时成立:错误数与基线一样多,时延没升高。
+    # 不设倍数阈值——"完全没变"是事实,"涨了 1.2 倍算不算有效"才是判断题,不在这做。
+    _err_same = ew is not None and eb is not None and abs(ew - eb) < 1.0
+    _lat_flat = (pw is None or pb is None) or pw <= pb * 1.05
+    # 错误数必须拿得到;时延拿不到就只按错误判(缺一维不等于"有效")
+    out["no_change"] = bool(_err_same and _lat_flat)
+    return out
+
+
 def _http(method: str, path: str, payload: dict | None = None,
           timeout: float = 30.0) -> dict:
     import urllib.request
@@ -318,8 +372,40 @@ def _http(method: str, path: str, payload: dict | None = None,
         return json.loads(resp.read().decode() or "{}")
 
 
+def service_reachable() -> bool:
+    """修复 agent 在服务端进程里跑(连接器连的是它),跑批进程只做编排。
+    服务端不在线时修复环节跳过,检测/定位两项照常出分。"""
+    try:
+        _http("GET", "/api/repair/approval-mode", timeout=5)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
 
 
+async def mitigate(diag_id: str, timeout_s: int = REPAIR_TIMEOUT_S) -> dict:
+    """脚本模拟用户确认根因 → 服务端派修复 agent → 轮询到终态。
+
+    为什么走 HTTP 而不是进程内直调:连接器的长轮询会话挂在**服务端进程**的内存里,
+    跑批进程里调 gateway.call 永远是"连接器不在线"。诊断结果已落库,服务端能读到,
+    派单门槛(确认/根因/在线连接器)全部在服务端侧照常校验。"""
+    from app.db import repository
+    from app.diagnosis import runner
+    # 确认根因:跑批进程内改内存 runner(它是诊断的权威),同时落库给服务端读
+    saved = await repository.confirm_diagnosis(diag_id, True, by="bench")
+    if saved is None:
+        raise RuntimeError("诊断单还没落库,无法确认根因")
+    live = runner.get(diag_id)
+    if live is not None:
+        live["confirmation"] = "confirmed"
+    out = _http("POST", f"/api/diagnosis/{diag_id}/repair/run", {})
+    repair_id = out["repair_id"]
+    t0 = time.time()
+    while time.time() - t0 < timeout_s:
+        run = _http("GET", f"/api/repair/runs/{repair_id}")
+        if run.get("status") in ("done", "failed"):
+            return run
+        await asyncio.sleep(3)
+    return {"id": repair_id, "status": "timeout", "result": {}}
 
 
 # ---------- 判分(AIOpsLab 口径) ----------
@@ -639,6 +725,7 @@ async def cmd_run(args) -> None:
             is_control = flag == CONTROL_GROUP
             t_inject: float | None = None
             base_calls: float | None = None
+            residual_dirty = False     # 上一题收尾时靶子没洗干净 → 本题数据不可信
             if is_control:
                 print(f"{head} | 对照题(不注入)")
             else:
@@ -675,6 +762,16 @@ async def cmd_run(args) -> None:
                       flush=True)
                 await asyncio.sleep(_settle)
 
+            # 判分前先量一下"这题到底有没有造出可观测故障"
+            _inj = None
+            if not is_control and c0.get("ground_truth_service"):
+                _inj = await measure_injection(c0["ground_truth_service"])
+                print("  注入效果:错误 %s(基线 %s) | p95 %sms(基线 %sms)%s" % (
+                    _inj["gt_error_win"], _inj["gt_error_base"],
+                    None if _inj["gt_p95_win"] is None else round(_inj["gt_p95_win"]),
+                    None if _inj["gt_p95_base"] is None else round(_inj["gt_p95_base"]),
+                    "  ⚠️ 无明显变化" if _inj.get("no_change") else ""), flush=True)
+
             print("  跑诊断管线…", flush=True)
             t0 = time.time()
             # --record:把这一组诊断发出的**所有上游响应**存下来,之后就能离线反复重跑
@@ -694,6 +791,8 @@ async def cmd_run(args) -> None:
                 rec["wall_s"] = wall
                 rec["pipeline_span"] = _fmt_run_duration(run)
                 rec["repeat"] = rep
+                rec["injection"] = _inj
+                rec["residual_dirty"] = residual_dirty
                 records.append(rec)
                 mark = ("✓" if rec.get("success") else
                         ("—" if rec.get("success") is None else "✗"))
@@ -711,6 +810,52 @@ async def cmd_run(args) -> None:
             # 就没被考核。现在定位错的组也记一条 success=False(写明"未派单"的原因),
             # 分数才完整:修复分 = 定位对 **且** 真修好了。
             mits: list[dict] = []
+            if not args.no_mitigation and not is_control:
+                gt = c0.get("ground_truth_service")
+                loc_ok = any(r.get("task") == "localization" and r.get("success")
+                             for r in records[-len(cs):])
+                mit_base = {"case_id": c0["case_id"] + "_mit", "task": "mitigation",
+                            "group": c0["group"], "control": False,
+                            "fault_flag": c0["fault_flag"], "ground_truth": gt,
+                            "repeat": rep}
+                if not loc_ok:
+                    print("  ⊘ 修复跳过:localization 未判对(根因不对,修复无从谈起)",
+                          flush=True)
+                    mits.append({**mit_base, "success": False,
+                                 "skip_reason": "定位未判对,没有确认过的根因,未派修复 agent"})
+                elif not service_reachable():
+                    print("  ⊘ 修复跳过:OpsPaw 服务端不在线(修复 agent 挂在服务端进程)",
+                          flush=True)
+                    mits.append({**mit_base, "success": None,
+                                 "skip_reason": "服务端不在线,未派修复 agent"})
+                else:
+                    print("  走修复 agent(自动确认根因 → 服务端派单)…", flush=True)
+                    t1 = time.time()
+                    try:
+                        repair_run = await mitigate(run["id"], args.repair_timeout)
+                        res = repair_run.get("result") or {}
+                        dirty = [f["flag"] for f in read_flags()
+                                 if f["current"] != "off" and "off" in f["variants"]]
+                        mit = {**mit_base,
+                               "repair_id": repair_run.get("id"),
+                               "repair_verdict": res.get("verdict"),
+                               "repair_action": res.get("action"),
+                               "flags_dirty_after": dirty,
+                               "success": (res.get("verdict") == "succeeded"
+                                           and not dirty),
+                               "localization_ok": loc_ok}
+                    except Exception as exc:  # noqa: BLE001  修复环节失败如实记账
+                        mit = {**mit_base, "error": str(exc)[:200], "success": None}
+                    wall_r = round(time.time() - t1, 1)
+                    mit["wall_s"] = wall_r
+                    mits.append(mit)
+                    mark = ("✓" if mit.get("success") else
+                            ("—" if mit.get("success") is None else "✗"))
+                    print(f"  {mark} {'mitigation':<13} GT={gt or '-':<16} "
+                          f"→ repair={mit.get('repair_verdict')} "
+                          f"action={mit.get('repair_action')} "
+                          f"靶机残留={mit.get('flags_dirty_after', 'n/a')} "
+                          f"({wall_r}s)", flush=True)
             records.extend(mits)
             # 修复记录必须落进这一组的 JSON:总表是从各组 JSON 重新汇总的,
             # 只留在内存里就等于没记(2026-10-20 夜跑:6 单修复成功,总表却是 0/0)
@@ -728,9 +873,11 @@ async def cmd_run(args) -> None:
                     # 下一轮同款故障涨不到那么高,粗筛直接判"见过,正常"。
                     if base_calls:
                         waited = 0
+                        settled = False
                         while waited < args.residual_wait:
                             cur = await _total_calls()
                             if cur is None or cur <= base_calls * args.residual_tol:
+                                settled = True
                                 break
                             print(f"  ⏳ 流量未回落({cur:.1f} vs 注入前 {base_calls:.1f} 次/秒),"
                                   f"继续等并延长注入窗…", flush=True)
@@ -739,6 +886,13 @@ async def cmd_run(args) -> None:
                         if waited:
                             await _extend_injection_window(c0["group"], t_inject, time.time())
                             print(f"  ✓ 注入窗已延长 {waited}s(这段数据不进基线)", flush=True)
+                        if not settled:
+                            # 等满上限还没回落:记一笔"残留未清"就往下走。
+                            # 2026-10-26 实测:一轮 11 组里 73 次没回落,每轮撞满 1800s,
+                            # 把一轮从 2 小时拖到 6 小时;而"总流量"本来就随压测器爬升漂移,
+                            # 拿几小时前的固定值当回落标准,永远等不到。
+                            residual_dirty = True
+                            print(f"  ⚠️ 等满 {waited}s 流量仍未回落,记为「残留未清」,继续下一题", flush=True)
                 # 组间清场:只重启本题的真因服务,清掉它的资源漂移(否则它会顶成下一题的锚点)
                 _gt = c0.get("ground_truth_service")
                 if _gt in RESET_CONTAINERS:
@@ -771,6 +925,9 @@ async def cmd_run(args) -> None:
                             waited += 60
                         if waited:
                             print(f"  ✓ 多等了 {waited}s 才恢复", flush=True)
+                        if waited >= args.residual_wait:
+                            residual_dirty = True
+                            print(f"  ⚠️ 等满 {waited}s 流量仍未恢复,记为「残留未清」", flush=True)
     finally:
         # 无论跑批怎么结束,靶子必须回到干净状态——留着开关开着就是给下一个使用者挖坑
         try:
@@ -875,6 +1032,30 @@ def _print_summary(records: list[dict]) -> None:
             if sent:
                 s_ok = sum(1 for r in sent if r.get("success"))
                 print(f"{'':<14} 其中实际派单 {len(sent)} 单,成功 {s_ok}/{len(sent)}")
+    # 注入没造出可观测故障的题:目标服务错误数与基线一样、时延没升。
+    # 单列出来并给一个剔除后的定位分——"题目没造出故障"不该算成"我们答错",
+    # 但也不替谁开脱,两个数都摆出来。
+    # 系统自己判"平台正常"的题:一个异常维都没越过判据线。这类题的定位分说明不了
+    # 能力——要么故障太弱,要么我们全瞎;两种情况都不该混进分母装成"答错"。
+    blind = [r for r in scored if r.get("verdict") == "clear"]
+    if blind:
+        print(f"其中 {len(blind)} 题系统判「平台正常」(一个异常维都没越线):"
+              + "、".join(r["group"] for r in blind))
+    # 上一题没洗干净就开跑的题:基线里带着别人的故障,结论不可信
+    dirty = [r for r in scored if r.get("residual_dirty")]
+    if dirty:
+        print(f"其中 {len(dirty)} 题开跑时靶子未洗干净(上一题残留):"
+              + "、".join(r["group"] for r in dirty))
+    no_sig = [r for r in scored if (r.get("injection") or {}).get("no_change")]
+    if no_sig:
+        print(f"其中 {len(no_sig)} 题注入后 GT 服务无可见变化(错误数与基线相同、时延未升):"
+              + "、".join(r["group"] for r in no_sig))
+        loc = [r for r in scored if r["task"] == "localization"]
+        adj = [r for r in loc if r not in no_sig]
+        if adj:
+            print(f"{'':<14} 剔除这些题后 localization "
+                  f"{sum(1 for r in adj if r.get('success'))}/{len(adj)}")
+
     failed = [r for r in records if r.get("success") is None]
     if failed:
         print(f"未计分 {len(failed)} 题:" + "、".join(r["case_id"] for r in failed))
@@ -997,7 +1178,11 @@ def main() -> None:
     p_run.add_argument("--residual-tol", type=float, default=RESIDUAL_TOL,
                        help="复位后流量回落到注入前的多少倍以内才算洗干净(默认 1.2)")
     p_run.add_argument("--residual-wait", type=int, default=RESIDUAL_MAX_WAIT_S,
-                       help="流量没回落时最多等多久(秒,默认 1800)")
+                       help="流量没回落时最多等多久(秒,默认 600);等满就记「残留未清」继续下一题")
+    p_run.add_argument("--no-mitigation", action="store_true",
+                       help="跳过修复环节(只考检测/定位;默认考三项)")
+    p_run.add_argument("--repair-timeout", type=int, default=REPAIR_TIMEOUT_S,
+                       help=f"修复 agent 派单到回执的超时(默认 {REPAIR_TIMEOUT_S}s)")
     p_run.add_argument("--skip-recover", action="store_true",
                        help="跳过等待(调试用;会引入跨题污染,结果仅供参考)")
 

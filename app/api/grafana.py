@@ -256,7 +256,7 @@ async def grafana_context(service: str = "", target_id: int | None = None,
     import time as _t
     from sqlalchemy import select
     from app.db.base import async_session
-    from app.db.models import DiagnosisRun
+    from app.db.models import DiagnosisRun, IntakeEvent, Sentinel
 
     # 缓存过期(5 分钟)或换了平台才翻库
     if not _CTX_CACHE["at"] or _t.time() - _CTX_CACHE["at"] > 300 \
@@ -326,7 +326,30 @@ async def grafana_context(service: str = "", target_id: int | None = None,
             }
 
     events: list[dict] = []
-    logs = await _error_log_clusters(service, _tgt2.name if _tgt2 else None,
+    async with async_session() as sess:
+        srows = (await sess.execute(select(Sentinel).order_by(Sentinel.id))).scalars().all()
+        mine = {x.id: x.name for x in srows
+                if not service or not x.services or service in (x.services or [])}
+        if mine:
+            erows = (await sess.execute(
+                select(IntakeEvent).where(IntakeEvent.intake_id.in_(list(mine)))
+                .order_by(IntakeEvent.id.desc()).limit(12))).scalars().all()
+            events = [{"at": e.fired_at.isoformat() if e.fired_at else "",
+                       "intake": mine.get(e.intake_id, ""), "trigger": e.trigger,
+                       "service": e.service, "diagnosis_id": e.diagnosis_id,
+                       "skipped": e.skipped} for e in erows]
+
+    # 错误日志聚类(要具体服务;"全部"时提示先选服务;窗口跟随看板时间档,
+    # 日志通道本身 5~120 分钟有效,超界夹紧)
+    logs: dict = {"note": "选一个具体服务后展示错误日志聚类", "clusters": [],
+                  "total": 0, "minutes": minutes}
+    if service:
+        if target_id is None:
+            _rows = [r for r in await repository.list_targets() if r.enabled]
+            _tgt2 = _rows[0] if _rows else None
+        else:
+            _tgt2 = await repository.get_target(target_id)
+        logs = await _error_log_clusters(service, _tgt2.name if _tgt2 else None,
                                          max(5, min(int(minutes or 60), 120)))
 
     return {"service": topo.get("service") or service, "topology": topo,

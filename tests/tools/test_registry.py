@@ -8,7 +8,7 @@ def test_builtin_scan_registers_core_tools_without_query_logistics():
     # 钉红线不钉全集:核心五工具必须在、query_logistics 必须不在——外部数据一律走 MCP。
     # builtin/ 是"丢文件即注册"的即插即用目录(如验收 1 的 promotions.py),
     # 断言精确集合会让任何合法丢入文件打红测试,与本章语义自相矛盾。
-    assert {"query_service", "query_catalog", "create_ticket", "submit_change"} <= names
+    assert {"query_service", "query_catalog", "query_faq", "create_ticket", "submit_change"} <= names
     assert "query_logistics" not in names
 
 
@@ -31,6 +31,8 @@ def test_create_ticket_schema_excludes_injected_conversation_id():
     assert "conversation_id" not in spec.json_schema.get("properties", {})  # 模型不见注入参数
 
 
+def test_query_faq_keeps_extended_timeout():
+    assert registry.get_builtin_spec("query_faq").timeout == 30.0  # RAG 管线远慢于默认 5s
 
 
 def test_duplicate_register_is_dropped_with_warning(caplog):

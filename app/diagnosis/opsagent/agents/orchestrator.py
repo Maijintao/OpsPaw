@@ -26,11 +26,11 @@ class CoreOrchestrator:
     """
     core manager class
     Attributes:
-        blackboard:
-        judge:
-        anomaly_sentinel:
-        failure_diagnoser:
-        root_detective:
+        blackboard: 
+        judge:              
+        anomaly_sentinel: 
+        failure_diagnoser: 
+        root_detective: 
     """
     def __init__(self, model_path, dataset):
         self.blackboard = Blackboard(task_id=generate_random_string(10))
@@ -40,7 +40,7 @@ class CoreOrchestrator:
     def process_task(self, time_window, tasks, number, case_number, vdbs, baseline):
         """
         main function to process one task published main.py.execute
-
+    
         Args:
             time_window: duration time in one query.  e.g. [start_time, end_time], [2021-03-10 22:00:00,2021-03-10 22:30:00]
             tasks: types of task in one query. e.g. ['AD', 'FT', 'RCL']
@@ -48,9 +48,9 @@ class CoreOrchestrator:
             case_number: -th query case
 
         Returns:
-            final_answer:
-            final_thinkings:
-
+            final_answer: 
+            final_thinkings: 
+        
         """
         self.blackboard.time_window = time_window
         self.blackboard.tasks = tasks
@@ -61,17 +61,17 @@ class CoreOrchestrator:
 
         msgPool = MessagePool()
         reviewPool = ReviewPool()
-        ad_agent = ADAgent("Anomaly Sentinel",
-                           time_window, number,
-                           self.blackboard.data_features,
+        ad_agent = ADAgent("Anomaly Sentinel", 
+                           time_window, number, 
+                           self.blackboard.data_features, 
                            msgPool, reviewPool, vdbs[0])
         ft_agent = FTAgent("Failure Diagnoser",
-                           time_window, number,
-                           self.blackboard.data_features,
+                           time_window, number, 
+                           self.blackboard.data_features, 
                            msgPool, reviewPool, vdbs[1])
         rcl_agent = RCLAgent("Root Detective",
-                            time_window, number,
-                            self.blackboard.data_features,
+                            time_window, number, 
+                            self.blackboard.data_features, 
                             msgPool, reviewPool, vdbs[2])
         ad_agent.think()
         ft_agent.think()
@@ -106,7 +106,7 @@ class CoreOrchestrator:
         if "RCL" in self.blackboard.tasks:
             final_answer.extend(rcl_agent.agent_context.last_message().answer)
             final_thinkings.append(rcl_agent.agent_context.last_message().thinking)
-
+        
         print("=== Finnal Answers ===")
         for i, (ans, think) in enumerate(zip(final_answer, final_thinkings), start=1):
             print(f"[{i}] Answer: {ans}")
@@ -114,7 +114,7 @@ class CoreOrchestrator:
 
 
         return final_answer, final_thinkings
-
+    
     def process_data(self, case_number):
         metrics = {}
         logs = None
@@ -127,7 +127,7 @@ class CoreOrchestrator:
         date = start_dt.strftime("%Y_%m_%d")
 
         start_timestamp = int(start_dt.timestamp())
-        end_timestamp = start_timestamp + 1800
+        end_timestamp = start_timestamp + 1800   
 
         if self.blackboard.dataset == "Bank":
             file_path = 'configs/Bank.yaml'
@@ -148,7 +148,7 @@ class CoreOrchestrator:
                 pivot_df = pivot_df.fillna(0)
 
                 metrics[pod] = pivot_df
-
+            
             log_path = os.path.join("dataset", self.blackboard.dataset, "telemetry", date, "log", "log_service.csv")
             log_data = pd.read_csv(log_path)
             logs = log_data[(log_data['timestamp'] >= start_timestamp) & (log_data['timestamp'] <= end_timestamp)]
@@ -168,9 +168,9 @@ class CoreOrchestrator:
             node_metric_path = os.path.join("dataset", self.blackboard.dataset, "cloudbed-2", "telemetry", date, "metric", "metric_node.csv")
             pod_data = pd.read_csv(pod_metric_path)
             node_data = pd.read_csv(node_metric_path)
-
+            
             pod_data['cmdb_id'] = pod_data['cmdb_id'].str.split('.').str[-1]
-
+            
 
             for pod in market_instances:
                 pod_df = pod_data[pod_data['cmdb_id'] == pod]
@@ -185,7 +185,7 @@ class CoreOrchestrator:
                 pivot_df = pod_df.pivot_table(index='timestamp', columns='kpi_name', values='value', aggfunc='mean')
                 pivot_df = pivot_df.fillna(0)
                 metrics[pod] = pivot_df
-
+            
             for pod in market_instances:
                 pod_df = node_data[node_data['cmdb_id'] == pod]
                 if pod_df.empty:
@@ -228,7 +228,7 @@ class CoreOrchestrator:
                 pod_df = pod_data[pod_data['cmdb_id'] == pod]
                 if pod_df.empty:
                     continue
-
+                
                 pod_df = pod_df[
                     (pod_df['timestamp'] >= start_timestamp - 1200) &
                     (pod_df['timestamp'] <= end_timestamp + 600)
@@ -237,7 +237,7 @@ class CoreOrchestrator:
                 pivot_df = pod_df.pivot_table(index='timestamp', columns='name', values='value', aggfunc='mean')
                 pivot_df = pivot_df.fillna(0)
                 metrics[pod] = pivot_df
-
+            
             for pod in telecom_instances:
                 pod_df = node_data[node_data['cmdb_id'] == pod]
                 if pod_df.empty:
@@ -251,7 +251,7 @@ class CoreOrchestrator:
                 pivot_df = pod_df.pivot_table(index='timestamp', columns='name', values='value', aggfunc='mean')
                 pivot_df = pivot_df.fillna(0)
                 metrics[pod] = pivot_df
-
+            
             for pod in telecom_instances:
 
                 pod_df = service_data[service_data['cmdb_id'] == pod]
@@ -266,7 +266,7 @@ class CoreOrchestrator:
                 pivot_df = pod_df.pivot_table(index='timestamp', columns='name', values='value', aggfunc='mean')
                 pivot_df = pivot_df.fillna(0)
                 metrics[pod] = pivot_df
-
+        
             logs = pd.DataFrame()
             trace_path = os.path.join("dataset", self.blackboard.dataset, "telemetry", date, "trace", "trace_span.csv")
             trace_data = pd.read_csv(trace_path)

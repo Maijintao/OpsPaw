@@ -37,7 +37,7 @@ class AgentContext:
         review_system_prompt: str = "",
         refine_system_prompt: str = "",
         user_prompt: str = "",
-        memory: Optional[List['Message']] = None
+        memory: Optional[List['Message']] = None 
     ):
         self.llm_path = llm_path                                    # llm model path
         self.peft_path = peft_path                                  # LoRA adaptor path
@@ -60,7 +60,7 @@ class AgentContext:
     #     self.memory.clear()
 
 class BaseAgent:
-    MAX_RETRY = 3
+    MAX_RETRY = 3 
     def __init__(
         self,
         name: str,
@@ -86,7 +86,7 @@ class BaseAgent:
             self._init_model_with_optional_peft(self.agent_context.llm_path, peft_path="")
         else:
             self._init_model_with_optional_peft(self.agent_context.llm_path, self.agent_context.peft_path)
-
+        
         self.tokenizer = AutoTokenizer.from_pretrained(self.agent_context.llm_path)
         self.tokenizer.pad_token = self.tokenizer.eos_token
 
@@ -123,7 +123,7 @@ class BaseAgent:
 
     def observe(self, target_name: str) -> list[Message]:
         new_msg = self.message_pool.get_latest_by_role(target_name)
-
+        
         # debug
         if new_msg:
             print(f"\n--- {self.name} observed new messages ---")
@@ -135,7 +135,7 @@ class BaseAgent:
 
     def think(self):
         run_mode = cfg.run_mode
-        think_user_prompt = self.agent_context.user_prompt
+        think_user_prompt = self.agent_context.user_prompt 
 
         # ===== RAG + few-shot  =====
         if run_mode == "normal":
@@ -154,8 +154,8 @@ class BaseAgent:
             cur_symptom = ""
             if symptoms_match:
                 cur_symptom = symptoms_match.group(1).strip()
-
-
+            
+            
             #2. get experience by RAG
             similar_experiences = []
             if cur_symptom:
@@ -164,7 +164,7 @@ class BaseAgent:
                 except Exception as e:
                     print(f"[Warning] search_similar_symptoms failed: {e}")
                     similar_experiences = []
-
+            
             #3. generator example as few-shot
             few_shot = ""
             if similar_experiences:
@@ -186,7 +186,7 @@ class BaseAgent:
                 except Exception as e:
                     print(f"[Warning] building few_shot failed: {e}")
                     few_shot = ""
-
+            
             # debug
             print(f"\n--- {self.name} get few-shot ---")
             print("few shots: ", few_shot)
@@ -206,11 +206,11 @@ class BaseAgent:
 
         answer = ast.literal_eval(answer_match.group(1).strip()) if answer_match else []
         thinking = thinking_match.group(1).strip() if thinking_match else ""
-
+                  
         new_msg = Message(self.name, answer, thinking, len(self.agent_context.memory) + 1)
         self.message_pool.push(new_msg)
-        self.reflect_message = new_msg
-
+        self.reflect_message = new_msg 
+        
         print(f"\n--- {self.name} think new messages ---")
         print("  " + new_msg.msg2str().replace('\n', '\n  '))
 
@@ -245,19 +245,19 @@ class BaseAgent:
     def cross_review(self, target_name: str) -> list[Review]:
         new_msg = self.observe(target_name)
         reviews: list[Review] = []
-
+        
         self_msg = self.agent_context.last_message()
         if self_msg is None:
             # If it's the first round, go to MessagePool and pull the lastest message
             self_msg = self.message_pool.get_latest_by_role(self.name)
 
-        # cross review
+        # cross review 
         review_user_prompt = f"""
             Please review the following answer and thinking.\n
-            The answer from {new_msg.role_name}:
+            The answer from {new_msg.role_name}: 
             <answer>{new_msg.answer}</answer>
             <thinking>{new_msg.thinking}</thinking>"""
-
+    
         response, _ = self._call_llm(self.agent_context.review_system_prompt, review_user_prompt)
 
         # parsing
@@ -276,7 +276,7 @@ class BaseAgent:
                 )
         self.review_pool.push(review)
         reviews.append(review)
-
+        
         if reviews:
             print(f"\n--- {self.name} generated {len(reviews)} reviews ---")
             for r in reviews:
@@ -292,13 +292,13 @@ class BaseAgent:
         if last_refined_msg is None:
             # If it's the first refine, go to MessagePool and pull the lastest message
             last_refined_msg = self.message_pool.get_latest_by_role(self.name)
-
+       
         if not reviews:
             print(f"\n--- {self.name} has no reviews for round {last_refined_msg.round_num}, answer considered good enough ---")
             return last_refined_msg
 
         review_text = "\n".join([f"- {r.comment} (accept={r.accept})" for r in reviews])
-
+        
         refine_user_prompt = self.agent_context.user_prompt +  f""" My last answer is:
         <answer>{last_refined_msg.answer}</answer>
         <thinking>{last_refined_msg.thinking}</thinking>\n
@@ -331,7 +331,7 @@ class BaseAgent:
         return new_msg
 
     def reflect(self, baseline: str):
-
+        
         # build reflect user prompt
         reflect_user_prompt = f"""
                                 Ground truth Result: {baseline}
@@ -340,17 +340,17 @@ class BaseAgent:
                                 Your predicted thinking: {self.reflect_message.thinking}
                                 Please reflect based on the above information.
                                 """
-
+                        
         # generate reflection
         response, _ = self._call_llm(self.agent_context.reflect_system_prompt, reflect_user_prompt)
 
         symptoms = []
         experience = []
-
+        
         # parsing
         symptoms_match = re.search(r"<symptoms>(.*?)</symptoms>", response, re.DOTALL)
         experience_match = re.search(r"<experience>(.*?)</experience>", response, re.DOTALL)
-
+        
         if symptoms_match:
             symptoms = symptoms_match.group(1).strip()
         if experience_match:
@@ -371,7 +371,7 @@ class BaseAgent:
             if not file_exists:
                 writer.writerow(["symptoms", "experience"])
             writer.writerow([symptoms, experience])
-
+    
     def _call_llm(self, system_prompt: str, user_prompt: str):
         response, final_prompt = None, None
         for attempt in range(1, self.MAX_RETRY + 1):

@@ -18,19 +18,19 @@ class DataProcessor:
                 e.g. metric["Tomcat04"]:
                 timestamp    kpi_name       value
                              OSLinux-OSLinux_FILE_-tmp-zabbix_agentd.log_FileSizeMB  | OSLinux-CPU_CPU_CPUCpuUtil
-                1614788220   1.0106                                                  |
+                1614788220   1.0106                                                  |       
                 1614778200                                                           |  26.2957
-
+        
         """
         filtered_metrics = {}
         anomaly_timestamps = {}
         deviation_scores = defaultdict(list)  # key -> list of deviations
-
+        
         # 1. 3-sigma anomaly detection with deviation score
         for key, df in metrics.items():
             retained_cols = []
             col_anomalies = {}
-
+            
             # iterate each column(kpi_name)
             for col in df.columns:
                 series = df[col]
@@ -42,9 +42,9 @@ class DataProcessor:
                 # |series - mean| > 3*std
                 z_scores = ((series - mean).abs()) / std
                 outliers = z_scores > 3
-
+                
                 """
-                catch outliers,
+                catch outliers, 
                 1. append to retrained_cols
                 2. get the DataFrame index(e.g. timestamp) and store to anomaly_times
                 3. store outliers'z-scores to deviations
@@ -139,8 +139,8 @@ class DataProcessor:
         num_peaks = 10
         num_dev = 6
         sorted_items = sorted(
-            aggregated_descriptions.items(),
-            key=lambda item: max(pattern_deviation[item[0]]),
+            aggregated_descriptions.items(), 
+            key=lambda item: max(pattern_deviation[item[0]]), 
             reverse=True
         )
 
@@ -159,20 +159,20 @@ class DataProcessor:
                 Mysql02 | OSLinux-OSLinux_LOCALDISK_LOCALDISK-sdb_DSKBps | Single spike: 14:15:00, max deviation ≈ 7.7σ
                 IG01 | OSLinux-OSLinux_MEMORY_MEMORY_MEMTotalMem | Single spike: 14:38:00, max deviation ≈ 7.7σ
             """
-
+             
             description = f"{host} | {metric} | {anomaly_type}: {time_summary}, max deviation ≈ {max_dev:.1f}σ"
             descriptions.append(description)
 
         return {"metric_features": descriptions}
-
+    
     def extract_log_features(logs,keywords=["failure", "fail","failed", "error", "fatal", "crash"],priority_quantile=0.8):
         if logs.empty:
             print("In\n\n")
             return {"log_features": "No useful log features."}
         template_miner = TemplateMiner()
-
+    
         logs = logs.copy()
-
+        
         def extract_template(log_message):
             try:
                 result = template_miner.add_log_message(log_message)
@@ -180,21 +180,21 @@ class DataProcessor:
             except Exception:
                 return log_message
         logs["template"] = logs["value"].fillna("").apply(extract_template)
-
+        
         pattern = '|'.join(map(re.escape, keywords))
         keyword_mask = logs['value'].str.contains(pattern, case=False, na=False)
         filtered_by_keywords = logs[keyword_mask]
-
+        
         if filtered_by_keywords.empty:
             print("In\n\n")
             return {"log_features": "No useful log features."}
-
+        
         corpus = logs['template'].tolist()
         vectorizer = TfidfVectorizer(
             use_idf=True,
-            binary=True,
+            binary=True,      
             smooth_idf=True,
-            norm=None,
+            norm=None,        
             stop_words='english'
         )
         vectorizer.fit(corpus)
@@ -205,21 +205,21 @@ class DataProcessor:
         priority_scores = tfidf_matrix.mean(axis=1).A1
         filtered_by_keywords = filtered_by_keywords.copy()
         filtered_by_keywords['priority'] = priority_scores
-
+    
         threshold = filtered_by_keywords['priority'].quantile(priority_quantile)
         trimmed_logs = filtered_by_keywords[filtered_by_keywords['priority'] >= threshold]
-
-        trimmed_logs['minute'] = (trimmed_logs['timestamp'] // 60).astype(int)
-        trimmed_logs = trimmed_logs.sort_values('timestamp')
+        
+        trimmed_logs['minute'] = (trimmed_logs['timestamp'] // 60).astype(int)  
+        trimmed_logs = trimmed_logs.sort_values('timestamp') 
         trimmed_logs = trimmed_logs.drop_duplicates(subset=['minute', 'template'])
-
+        
         descriptions = [
             f"{timestamp_to_shanghai_str(row['timestamp'])} <{row['cmdb_id']}> | {row['log_name']}, {row['template']}"
             for _, row in trimmed_logs.iterrows()
         ]
 
         return {"log_features": descriptions}
-
+    
     def extract_trace_features(traces):
         descriptions = generate_trace_descriptions(traces)
         return {"trace_features": descriptions}
@@ -315,7 +315,7 @@ class DataSetCNN(Dataset):
             return torch.tensor(self.datas[i].reshape(-1, self.length), dtype=torch.float)
         else:
             return torch.tensor(self.datas[i].reshape(-1, self.length), dtype=torch.float), torch.tensor(self.label[i], dtype=torch.long)
-
+        
 class CNN(nn.Module):
     def __init__(self, classes=50):
         super(CNN, self).__init__()
@@ -499,10 +499,10 @@ def log_filter(logs, keywords):
     pattern = '|'.join(map(re.escape, keywords))
     keyword_mask = logs['value'].str.contains(pattern, case=False, na=False)
     filtered_by_keywords = logs[keyword_mask]
-
+    
     if filtered_by_keywords.empty:
         return pd.DataFrame(columns=logs.columns)
-
+    
     return filtered_by_keywords.reset_index(drop=True)
 
 
@@ -514,7 +514,7 @@ def log_filter(logs, keywords):
 from collections import defaultdict
 
 def generate_trace_descriptions(trace_data: pd.DataFrame, q=0.98) -> list:
-
+    
     p95_series = trace_data.groupby("type")["duration"].quantile(q)
     p95_dict = p95_series.to_dict()
     trace_data["is_high_latency"] = trace_data["duration"] > trace_data["type"].map(p95_dict)
@@ -529,9 +529,9 @@ def generate_trace_descriptions(trace_data: pd.DataFrame, q=0.98) -> list:
     window_groups = defaultdict(list)
     path_counter = defaultdict(int)
 
-    for _, row in high_latency_data.iterrows():
+    for _, row in high_latency_data.iterrows():  
         ts = int(row["timestamp"] / 1000)
-        time_bucket = ts - (ts % 60)
+        time_bucket = ts - (ts % 60) 
 
         if pd.isnull(row["cmdb_id"]):
             continue
@@ -540,10 +540,10 @@ def generate_trace_descriptions(trace_data: pd.DataFrame, q=0.98) -> list:
         duration = row["duration"]
         span_id = row["span_id"]
         parent_id = row["parent_id"]
-        caller = span_to_cmdb_map.get(parent_id, callee)
+        caller = span_to_cmdb_map.get(parent_id, callee)  
 
         key = (time_bucket, callee)
-        window_groups[key].append((caller, duration))
+        window_groups[key].append((caller, duration)) 
 
         grandparent_id = span_parent_map.get(parent_id, None)
         grandparent = span_to_cmdb_map.get(grandparent_id, "Unknown")
@@ -551,7 +551,7 @@ def generate_trace_descriptions(trace_data: pd.DataFrame, q=0.98) -> list:
             path_key = f"{grandparent} → {caller} → {callee}"
             path_counter[path_key] += 1
 
-    desc_records = []
+    desc_records = [] 
 
     for (time_bucket, callee), entries in window_groups.items():
         caller_counts = defaultdict(int)
@@ -567,7 +567,7 @@ def generate_trace_descriptions(trace_data: pd.DataFrame, q=0.98) -> list:
         desc = f"<{start_str}~{end_str}, Callee={callee}, Count={count}, MaxLatency={max_latency:.0f}ms, Callers=[{callers_str}]>"
         desc_records.append((desc, count, max_latency))
 
-    desc_records.sort(key=lambda x: (-x[1], -x[2]))
+    desc_records.sort(key=lambda x: (-x[1], -x[2])) 
 
     descriptions = [desc for desc, _, _ in desc_records[0:24]]
 

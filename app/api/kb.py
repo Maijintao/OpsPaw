@@ -26,7 +26,8 @@ router = APIRouter(prefix="/api/kb")
 MAX_TEXT_CHARS = 40000          # 单次录入正文上限:一份章节文档够用,防误贴整本手册把上游打爆
 STRATEGIES = ("vector", "bm25", "hybrid", "hybrid_rerank")
 # 页面上这一排按钮对应的作业(注册表在 app/core/jobs.py,前端只传名字)
-KB_JOBS = ("kb-preview", "kb-build", "kb-repatch", "kb-mine", "kb-vectorize")
+KB_JOBS = ("kb-preview", "kb-build", "kb-repatch", "kb-mine", "kb-vectorize",
+           "seed-conv", "kb-reset")
 
 
 def _fingerprint(questions: str, answer: str) -> str:

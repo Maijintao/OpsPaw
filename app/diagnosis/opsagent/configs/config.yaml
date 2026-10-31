@@ -2,7 +2,7 @@ dataset: "Otel"
 query_dataset: "Otel/test"
 
 llm_setting_agent:
-  max_token: 1024 # 2048 or more
+  max_token: 1024 # 2048 or more 
   MAX_RETRY: 3
   model_path: "XXX" # your local model path
   ad_peft_path: "./ppo_data/60/ad_agent/iter_0"
@@ -26,7 +26,7 @@ thinking_file_path: "./ppo_data/60"
 peft_file_path: "./ppo_data/60"
 iteration: 3  # 0/3/5/10 ...
 
-# after_ppo_answer_file_path: "./results/exp/test/iter_5"
+# after_ppo_answer_file_path: "./results/exp/test/iter_5" 
 
 # scoring
 # check if the dir exists

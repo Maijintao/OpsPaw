@@ -19,22 +19,22 @@ class Judge:
 
         self.alpha = 0.3
         self._model = None
-        self._tokenizer = None
-
+        self._tokenizer = None     
+    
     def evaluate(self, answer: Any, thinking: str, baseline_answer: Any) -> Dict[str, Any]:
         pred_list = self._to_list(answer)
         gold_list = self._to_list(baseline_answer)
 
         bonus = 5 if self._fully_correct(pred_list, gold_list) else 0
-
+    
         user_prompt = self._build_user_prompt(thinking, pred_list)
         response = self._call_llm(self.system_prompt, user_prompt)
-        scores = self._parse_scores(response)
+        scores = self._parse_scores(response) 
 
         # scores * (1 - alpha) + alpha * bonus
         avg_four = (scores["consistency"] + scores["clarity"] + scores["relevance"] + scores["rationality"]) / 4.0
         total = avg_four * (1.0 - self.alpha) + self.alpha * bonus
-
+        
         return {
             "consistency": scores["consistency"],
             "clarity": scores["clarity"],
@@ -75,8 +75,8 @@ class Judge:
         if isinstance(out, dict) and "content" in out:
             return str(out["content"])
         return str(out)
-
-
+    
+    
     @staticmethod
     def _build_user_prompt(chain: str, answers: List[str]) -> str:
         answer = "\n".join(map(str, answers)) if answers else "(none)"
