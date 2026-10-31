@@ -1,3 +1,4 @@
+import os
 import uuid
 
 import pytest
@@ -6,6 +7,10 @@ from app.kb import dualwrite, milvus_client as mc
 from app.kb.documents import Chunk
 
 URI = "http://localhost:19530"
+pytestmark = pytest.mark.skipif(
+    os.environ.get("RUN_MILVUS_TESTS") != "1",
+    reason="需要 Milvus Standalone；设置 RUN_MILVUS_TESTS=1 后运行",
+)
 
 
 async def test_vectorize_writes_bm25_and_metadata(db_session_factory, monkeypatch):

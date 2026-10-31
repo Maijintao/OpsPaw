@@ -73,6 +73,7 @@ def status(name: str) -> dict:
     log = run.log_path.read_text(encoding="utf-8", errors="replace")[-12000:] if run.log_path and run.log_path.exists() else ""
     spec = JOBS[name]
     return {"name": name, "title": spec.title, "needs": spec.needs,
+            "cmd": " ".join(spec.argv),
             "status": run.status, "returncode": run.returncode, "log": log}
 
 def status_all() -> list[dict]:

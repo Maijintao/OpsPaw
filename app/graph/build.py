@@ -4,7 +4,7 @@ from app.graph.state import ConversationState
 from app.graph.routing import route_by_intent
 from app.graph.routing import should_continue
 
-def build_graph(checkpointer=None):
+def _builder() -> StateGraph:
     builder = StateGraph(ConversationState)
     builder.add_node("main_agent", nodes.main_agent)
     builder.add_node("log", nodes.log_node)
@@ -30,5 +30,9 @@ def build_graph(checkpointer=None):
     builder.add_conditional_edges("main_agent", should_continue, {"continue": "agent_tools", "stop": "log"})
     builder.add_edge("agent_tools", "main_agent")
     builder.add_edge("log", END)
+    return builder
+
+
+def build_graph(checkpointer=None):
     from app.core.observability import attach_observability
-    return attach_observability(builder.compile(checkpointer=checkpointer))
+    return attach_observability(_builder().compile(checkpointer=checkpointer))

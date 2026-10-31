@@ -32,6 +32,33 @@
 
   window.missingBox = (message) => el("div", "miss", message || "暂无数据");
 
+  window.jobRow = (specs, reload, commandText) => {
+    const row = el("div", "job-row");
+    for (const spec of specs.filter(Boolean)) {
+      const item = el("div", "job-item");
+      item.appendChild(el("strong", null, spec.title || spec.name));
+      item.appendChild(el("span", "muted", " · " + (spec.status || "idle")));
+      if (spec.needs) item.appendChild(el("div", "muted", spec.needs));
+      const button = el("button", "btn sm", spec.status === "running" ? "运行中" : "重跑");
+      button.disabled = spec.status === "running";
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try {
+          await api("/api/jobs/" + encodeURIComponent(spec.name), { method: "POST" });
+          toast("已启动：" + (spec.title || spec.name));
+          if (reload) await reload();
+        } catch (error) {
+          toast("启动失败：" + error.message, true);
+          button.disabled = false;
+        }
+      });
+      item.appendChild(button);
+      row.appendChild(item);
+    }
+    if (commandText) row.appendChild(el("code", "muted", commandText));
+    return row;
+  };
+
   window.fmtTime = (value) => value ? String(value).replace("T", " ").slice(0, 19) : "—";
 
   window.pct = (value) => value === null || value === undefined

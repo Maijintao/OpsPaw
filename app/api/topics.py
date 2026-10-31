@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from app.config import settings
 from app.core.taxonomy import TOPIC_CLASSES
+from app.db import repository
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
 
@@ -19,12 +20,21 @@ async def topics():
             online = response.is_success
     except httpx.HTTPError:
         pass
+    try:
+        distribution = await repository.topic_distribution()
+        pool_ready = True
+        pool_error = None
+    except Exception as exc:
+        distribution = None
+        pool_ready = False
+        pool_error = f"{type(exc).__name__}: {exc}"
     return {"topics": [{"name": item.name, "boundary": item.boundary,
                         "examples": list(item.examples), "severity": item.severity}
                        for item in TOPIC_CLASSES],
             "classifier_online": online,
-            "pool_ready": False,
-            "pool_note": "问题池及分类结果表依赖 RAG 数据模块，当前未接入。"}
+            "pool_ready": pool_ready,
+            "pool": distribution,
+            "pool_note": None if pool_ready else f"问题池暂时读不到：{pool_error}"}
 
 @router.post("/classify")
 async def classify(body: ClassifyBody):

@@ -1,0 +1,183 @@
+{
+ "meta": {
+  "generated_at": "2026-07-20 09:34",
+  "strategy": "hybrid_rerank",
+  "dataset": "tests/data/eval_ch04.jsonl",
+  "n_answerable": 60,
+  "n_absent": 20,
+  "recovered_from": "dev-notes/ch09-confidence-calibration.txt(同一轮 make calibrate-confidence 的输出,扫描表只留了打印的那些点)"
+ },
+ "distribution": {
+  "answerable": {
+   "n": 60,
+   "min": 0.034,
+   "p25": 0.489,
+   "p50": 0.715,
+   "p75": 0.781,
+   "max": 0.856
+  },
+  "absent": {
+   "n": 20,
+   "min": 0.002,
+   "p25": 0.101,
+   "p50": 0.105,
+   "p75": 0.132,
+   "max": 0.251
+  }
+ },
+ "scan": [
+  {
+   "t": 0.05,
+   "pass_rate": 0.983,
+   "leak_rate": 0.9,
+   "youden_j": 0.083
+  },
+  {
+   "t": 0.1,
+   "pass_rate": 0.983,
+   "leak_rate": 0.9,
+   "youden_j": 0.083
+  },
+  {
+   "t": 0.11,
+   "pass_rate": 0.967,
+   "leak_rate": 0.35,
+   "youden_j": 0.617
+  },
+  {
+   "t": 0.12,
+   "pass_rate": 0.95,
+   "leak_rate": 0.3,
+   "youden_j": 0.65
+  },
+  {
+   "t": 0.13,
+   "pass_rate": 0.95,
+   "leak_rate": 0.25,
+   "youden_j": 0.7
+  },
+  {
+   "t": 0.14,
+   "pass_rate": 0.933,
+   "leak_rate": 0.2,
+   "youden_j": 0.733
+  },
+  {
+   "t": 0.15,
+   "pass_rate": 0.933,
+   "leak_rate": 0.15,
+   "youden_j": 0.783
+  },
+  {
+   "t": 0.2,
+   "pass_rate": 0.917,
+   "leak_rate": 0.1,
+   "youden_j": 0.817
+  },
+  {
+   "t": 0.25,
+   "pass_rate": 0.85,
+   "leak_rate": 0.05,
+   "youden_j": 0.8
+  },
+  {
+   "t": 0.26,
+   "pass_rate": 0.85,
+   "leak_rate": 0.0,
+   "youden_j": 0.85
+  },
+  {
+   "t": 0.3,
+   "pass_rate": 0.817,
+   "leak_rate": 0.0,
+   "youden_j": 0.817
+  },
+  {
+   "t": 0.35,
+   "pass_rate": 0.817,
+   "leak_rate": 0.0,
+   "youden_j": 0.817
+  },
+  {
+   "t": 0.4,
+   "pass_rate": 0.783,
+   "leak_rate": 0.0,
+   "youden_j": 0.783
+  },
+  {
+   "t": 0.45,
+   "pass_rate": 0.767,
+   "leak_rate": 0.0,
+   "youden_j": 0.767
+  },
+  {
+   "t": 0.5,
+   "pass_rate": 0.733,
+   "leak_rate": 0.0,
+   "youden_j": 0.733
+  },
+  {
+   "t": 0.55,
+   "pass_rate": 0.717,
+   "leak_rate": 0.0,
+   "youden_j": 0.717
+  },
+  {
+   "t": 0.6,
+   "pass_rate": 0.717,
+   "leak_rate": 0.0,
+   "youden_j": 0.717
+  },
+  {
+   "t": 0.65,
+   "pass_rate": 0.667,
+   "leak_rate": 0.0,
+   "youden_j": 0.667
+  },
+  {
+   "t": 0.7,
+   "pass_rate": 0.55,
+   "leak_rate": 0.0,
+   "youden_j": 0.55
+  },
+  {
+   "t": 0.75,
+   "pass_rate": 0.333,
+   "leak_rate": 0.0,
+   "youden_j": 0.333
+  },
+  {
+   "t": 0.8,
+   "pass_rate": 0.2,
+   "leak_rate": 0.0,
+   "youden_j": 0.2
+  },
+  {
+   "t": 0.85,
+   "pass_rate": 0.1,
+   "leak_rate": 0.0,
+   "youden_j": 0.1
+  },
+  {
+   "t": 0.9,
+   "pass_rate": 0.0,
+   "leak_rate": 0.0,
+   "youden_j": 0.0
+  },
+  {
+   "t": 0.95,
+   "pass_rate": 0.0,
+   "leak_rate": 0.0,
+   "youden_j": 0.0
+  }
+ ],
+ "recommended": {
+  "threshold": 0.26,
+  "youden_j": 0.85,
+  "pass_rate": 0.85,
+  "leak_rate": 0.0
+ },
+ "read_notes": {
+  "confidence_calibration": "线定在 0.26 是因为可答通过率 0.85 且应拒放行率 0.0,往左挪到 0.2 应拒放行率就变 0.1,往右挪到 0.3 可答通过率就掉到 0.817,所以调阈值时看这条线怎么平衡放行和误拦的代价就行。"
+ }
+}

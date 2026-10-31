@@ -1,3 +1,4 @@
+import os
 import uuid
 
 import pytest
@@ -5,6 +6,10 @@ import pytest
 from app.kb import milvus_client as mc
 
 URI = "http://localhost:19530"
+pytestmark = pytest.mark.skipif(
+    os.environ.get("RUN_MILVUS_TESTS") != "1",
+    reason="需要 Milvus Standalone；设置 RUN_MILVUS_TESTS=1 后运行",
+)
 
 
 @pytest.fixture()

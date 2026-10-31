@@ -146,3 +146,19 @@ table.tbl tr.bad td { background: #ffe9ec; }
   max-width: 84vw;
 }
 #toast.err { background: var(--error); color: #fff; }
+#toast.show { display: block; }
+
+/* RAG 页面共用控件 */
+.rag-admin-nav { margin-top: 12px; }
+.job-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.job-item { border: 2px solid var(--ink); background: var(--paper); padding: 7px 9px; }
+.job-item .btn { margin-left: 8px; }
+.muted { color: var(--muted); font-size: 12px; }
+
+.rag-citations { margin-top: 10px; border-top: 2px dashed rgba(43,38,50,.3); padding-top: 8px; }
+.rag-citations summary { cursor: pointer; font-weight: 700; font-size: 12.5px; }
+.rag-citations ol { margin: 8px 0 0; padding-left: 22px; }
+.rag-citations li { margin: 8px 0; font-size: 12.5px; line-height: 1.65; }
+.rag-citations p { margin: 4px 0; white-space: pre-wrap; }
+.rag-citations small { color: var(--muted); }
+.rag-feedback { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; margin-top: 9px; font-size: 12px; color: var(--muted); }

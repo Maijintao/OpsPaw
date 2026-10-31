@@ -15,6 +15,7 @@ from app.graph.routing import (
     ("变更申请", "change_flow"),
     ("故障处理", "service_ops"),
     ("建单跟进", "service_ops"),
+    ("配置管理", "service_ops"),
     ("日志指标", "service_ops"),
     ("服务状态", "service_ops"),
 ])
@@ -27,9 +28,10 @@ def test_route_by_intent_unknown_defaults_business():
     assert route_by_intent({}) == "service_ops"
 
 
-def test_intent_to_route_covers_nine_classes():
+def test_intent_to_route_covers_ten_classes():
     assert set(INTENT_TO_ROUTE) == {
-        "投诉", "闲聊", "其他", "运维知识", "变更申请", "故障处理", "建单跟进", "日志指标", "服务状态"}
+        "投诉", "闲聊", "其他", "运维知识", "变更申请", "故障处理", "建单跟进",
+        "配置管理", "日志指标", "服务状态"}
 
 
 def test_should_continue_stops_when_no_tool_calls():

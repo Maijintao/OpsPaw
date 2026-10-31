@@ -1,35 +1,84 @@
-# 当前分支部署说明
+# OpsPaw 运行与部署
 
-本文说明 `mjt` 分支现有功能的部署方式。完整 RAG 模块尚未合入；不要把知识库、RAG 作业或问题池统计当作已部署能力。
+本文说明当前分支的本地运行、RAG 知识库构建和可选服务配置。应用需要 Python 3.12 及以上、uv，以及可访问的 MySQL、Milvus 和模型上游。
 
-## 环境准备
-
-需要 Python 3.12 及以上、uv、可访问的异步 MySQL，或用于本机开发的 SQLite。复制 `.env.example` 为 `.env`，至少填写：
-
-- `CHAT_MODEL`、`CHAT_BASE_URL`、`CHAT_API_KEY`
-- `DATABASE_URL`
-- `CHECKPOINTER_DB_PATH`
-
-根据实际部署需要再填写 MCP、Grafana 和修复连接器地址。Langfuse 仅用于可选的模型调用追踪和 token 报告；没有配置时不影响对话。
-
-安装并启动：
+## 安装与配置
 
 ```bash
 uv sync --locked
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+cp .env.example .env
 ```
 
-应用启动时创建当前模型所需的数据库表。MySQL 手工建表参考 `sql/targets-ddl.sql` 和 `sql/repair-ddl.sql`；诊断、告警、事故和设置表由应用按当前模型创建。数据库凭据、Langfuse 密钥和上游请求头只放在部署环境，不提交到仓库。
+至少填写以下配置，真实凭据不要提交到仓库：
+
+- `CHAT_BASE_URL`、`CHAT_MODEL`、`CHAT_API_KEY`
+- `EMBED_BASE_URL`、`EMBED_MODEL`、`EMBED_API_KEY`
+- `RERANK_BASE_URL`、`RERANK_MODEL`、`RERANK_API_KEY`
+- `DATABASE_URL`
+- `MILVUS_URI`
+- `CHECKPOINTER_DB_PATH`
+
+根据部署情况继续配置 MCP、Grafana、修复连接器和可选的 Langfuse。
+
+## 数据库与知识库
+
+应用启动时会按当前 ORM 模型创建缺失的数据表。`sql/ch02-ddl.sql`、`sql/ch03-ddl.sql`、`sql/ch03-staging-review.sql`、`sql/ch04-ddl.sql` 和 `sql/ch09-ddl.sql` 可作为建表及升级参考；这些脚本包含 `CREATE TABLE`，不要在已有表上盲目重复执行。
+
+知识库材料位于 `data/kb/`。首次构建：
+
+```bash
+make kb-build
+make kb-vectorize
+```
+
+切换 Milvus 实例后可执行 `make kb-vectorize-all` 重新写入全部已有知识块。修改 Markdown 材料后可执行 `make kb-repatch`，只重嵌发生变化的块。
+
+## 启动
+
+```bash
+make dev
+```
+
+等价的直接命令：
+
+```bash
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+主要页面：
+
+- `/`：值班对话
+- `/kb`：知识库录入、切块预览、向量化和检索测试
+- `/review`：待审知识队列
+- `/rag-eval`：RAG 评估结果与忠实度个案
+- `/observability`：成本、评估趋势和置信度校准
+- `/platforms`：数据源与监控
+- `/diagnosis`：诊断证据
+- `/repair/{id}`：修复回执
+- `/alerts`：告警与巡检
+- `/incidents`：事故中心
+- `/admin`：配置、后台作业和保留策略
+- `/topics`：主题分类
 
 ## 可选服务
 
-- 演示 MCP 服务：`bash scripts/start_mcp.sh`。脚本退出时会清理它启动的进程。
-- Langfuse：配置 `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`、`LANGFUSE_BASE_URL`，在 `/admin` 运行“生成意图 token 用量报告”，再到 `/observability` 查看。报告未生成时页面显示未生成，不用旧文件代替。
-- 主题分类器：只有准备好 `data/ch10/onnx/` 中的模型、tokenizer 和阈值文件后，才运行 `uv run python -m scripts.ch10.serve`。模型和训练产物不随仓库提交；没有文件时服务不会伪装成在线。
-- 修复连接器：平台管理员先在平台接入页配置可访问的 OpsPaw 地址，再按页面生成的一次性安装命令部署。连接器只主动连接 OpsPaw；写操作受计划、审批和审计流程约束。
+- 演示 MCP：`bash scripts/start_mcp.sh`。脚本运行期间保持前台，退出时会清理子进程。
+- Langfuse：配置 `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`、`LANGFUSE_BASE_URL` 后生成 token 用量报告。
+- 主题分类器：准备模型和 tokenizer 后按 `scripts/ch10/README.md` 启动。
+- 修复连接器：从平台接入页生成一次性安装命令；写操作受计划、审批和审计流程约束。
 
-## 页面和状态
+## 检查
 
-`/platforms` 管理数据源和查看监控；`/diagnosis?id=任务号` 查看诊断证据；`/repair/任务号` 查看修复回执；`/alerts` 管理告警与巡检；`/incidents` 查看事故；`/admin` 查看配置状态、作业与保留策略；`/topics` 查看主题目录和可用分类器状态。
+```bash
+make test
+make validate-rag
+```
 
-RAG 问题池及分类分布依赖另一模块，当前分支没有这些表和数据。诊断回放也只衡量离线样例的确定性阶段，不等同真实模型或生产环境效果。
+完整的四策略 RAG 评估需要可用的 Milvus、已向量化知识库、嵌入、重排和聊天上游：
+
+```bash
+make eval-rag
+make calibrate-confidence
+```
+
+评估和诊断回放只代表给定样例上的结果，不等同于生产环境准确率。

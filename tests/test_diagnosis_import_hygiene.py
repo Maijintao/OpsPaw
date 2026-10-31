@@ -55,7 +55,7 @@ def _nested_imports(fn) -> list[tuple[str, int]]:
 def test_no_nested_import_shadows_module_global():
     offenders: list[str] = []
     for p in sorted(_APP.rglob("*.py")):
-        tree = ast.parse(p.read_text())
+        tree = ast.parse(p.read_text(encoding="utf-8"))
         globals_ = _module_bound_names(tree)
         for fn in [n for n in ast.walk(tree)
                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]:
