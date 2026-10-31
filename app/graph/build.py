@@ -12,11 +12,18 @@ def build_graph(checkpointer=None):
     builder.add_node("script_reply", nodes.script_reply)
     builder.add_node("complaint_reply", nodes.complaint_reply)
     builder.add_node("resolve_reference", nodes.resolve_reference)
+    builder.add_node("fetch_service", nodes.fetch_service)
+    builder.add_node("retrieve_knowledge", nodes.retrieve_knowledge)
+    builder.add_node("retrieve_runbook", nodes.retrieve_runbook)
     builder.add_edge(START, "resolve_reference")
     builder.add_edge("resolve_reference", "classify_intent")
     builder.add_conditional_edges("classify_intent", route_by_intent, {
         "escalate": "complaint_reply", "fallback_script": "script_reply",
-        "knowledge": "main_agent", "change_flow": "main_agent", "service_ops": "main_agent"})
+        "knowledge": "retrieve_knowledge", "change_flow": "fetch_service",
+        "service_ops": "main_agent"})
+    builder.add_edge("retrieve_knowledge", "main_agent")
+    builder.add_edge("fetch_service", "retrieve_runbook")
+    builder.add_edge("retrieve_runbook", "main_agent")
     builder.add_edge("script_reply", "log")
     builder.add_edge("complaint_reply", "log")
     builder.add_node("agent_tools", nodes.agent_tools)

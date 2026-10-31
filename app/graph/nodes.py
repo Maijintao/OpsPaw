@@ -4,7 +4,9 @@ import logging
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from app.config import settings
 from app.core.llm import get_chat_model, needs_non_streaming_tools
-from app.core.prompts import AGENT_SYSTEM
+from app.core import query_understanding, retrieval
+from app.core.confidence import compute_evidence_confidence, snapshot_from_hits
+from app.core.prompts import AGENT_SYSTEM, CHANGE_JUDGE_HINT
 from app.db import repository
 
 logger = logging.getLogger(__name__)
@@ -14,7 +16,7 @@ from app.core.prompts import SCRIPT_REPLY_CHITCHAT, SCRIPT_REPLY_OTHER, COMPLAIN
 from app.core import coref, memory
 TURN_CTX_ID = "turn-ctx"
 from langgraph.types import interrupt
-from app.tools import engine, registry
+from app.tools import engine, registry, service_catalog
 
 def _user_text(state) -> str:
     for m in reversed(state.get("messages", [])):
@@ -90,6 +92,69 @@ def _history_text(state) -> str:
     return f"{head}\n{body}".strip() if head else body
 
 
+def _last_assistant_text(state) -> str:
+    """滑窗里值班猫的最后一条发言(判断上轮是否以提问收尾用)。"""
+    msgs = memory.build_window(state.get("messages", []),
+                               state.get("summary_upto_msg_id") or 0,
+                               settings.context_window_max_tokens)
+    for message in reversed(msgs[:-1] if msgs else []):
+        if isinstance(message, AIMessage):
+            return message.content if isinstance(message.content, str) else ""
+    return ""
+
+
+def _match_service_name(text: str, services: list[dict]) -> str | None:
+    lowered = (text or "").lower()
+    for service in services:
+        if service["service_id"].lower() in lowered:
+            return service["service_id"]
+    return None
+
+
+async def fetch_service(state) -> dict:
+    """变更流程定位真实服务；无法唯一定位时暂停并交由前端选择。"""
+    services, err = await service_catalog.discover_services()
+    if err:
+        return {"service_data": {"error": err, "code": "discovery_down"},
+                "trace": {"fetch_service": {"discovery_error": err}}}
+    sid = state.get("service_id") or _match_service_name(
+        state.get("resolved_query") or _user_text(state), services)
+    while not any(service["service_id"] == str(sid or "") for service in services):
+        sid = interrupt({"type": "select_service", "services": services})
+    data = await service_catalog.service_snapshot(sid, discovered=services)
+    return {"service_id": sid, "service_data": data,
+            "trace": {"fetch_service": {"service_id": sid}}}
+
+
+async def retrieve_runbook(state) -> dict:
+    """变更前强制检索 runbook，并将带编号的证据注入主 Agent。"""
+    base = state.get("resolved_query") or _user_text(state)
+    service_data = state.get("service_data") or {}
+    seed = f"{base} {service_data.get('status', '')}".strip()
+    queries = await query_understanding.expand_queries(seed)
+
+    merged: dict = {}
+    for query in queries:
+        for hit in await retrieval.search_knowledge(
+                query, strategy="hybrid_rerank", bm25_text=query):
+            current = merged.get(hit["id"])
+            if current is None or hit["rerank_score"] > current["rerank_score"]:
+                merged[hit["id"]] = hit
+    ranked = sorted(merged.values(), key=lambda item: item["rerank_score"], reverse=True)
+    arranged = retrieval.arrange_head_tail(ranked)
+    citations = [
+        {"n": i + 1, "id": hit["id"], "section_path": hit["section_path"],
+         "question": hit["question"], "answer": hit["answer"],
+         "content_type": hit["content_type"]}
+        for i, hit in enumerate(arranged)
+    ]
+    evidence = "\n".join(
+        f"[{citation['n']}] {citation['question']}: {citation['answer']}"
+        for citation in citations)
+    return {"evidence": evidence, "citations": citations,
+            "trace": {"retrieve_runbook": {"queries": queries, "hits": len(ranked)}}}
+
+
 async def resolve_reference(state) -> dict:
     """指代消解 + Query 改写(合一):吃最近几轮历史把半截话补成完整问句;已完整则透传。
     写 resolved_query,供 classify_intent 与 change_flow 检索共用(意图识别不再改写)。"""
@@ -137,9 +202,25 @@ def _agent_messages(state) -> list:
         window = _with_turn_context(window, turn_ctx)
     return [SystemMessage(AGENT_SYSTEM), *window]
 
+_KNOWLEDGE_EVIDENCE_HINT = (
+    "\n\n## 已检索到的知识证据(请据此作答,每个关键结论后标注来源编号如[1];"
+    "证据已给,不要再调用 query_faq;仍可按需调用服务查询/监控/日志等工具)\n"
+    "服务名、编号这类标识串逐字复制证据里的写法,证据里没有的服务不要写;带条件的结论要连条件一起说。\n"
+)
+
+
 def _turn_context(state) -> str:
+    """本轮才有的摘要、检索证据和变更服务快照。"""
+    parts = []
     summary = memory.summary_system(state.get("summary"))
-    return summary.content if summary is not None else ""
+    if summary is not None:
+        parts.append("\n\n" + summary.content)
+    if state.get("evidence"):
+        parts.append(_KNOWLEDGE_EVIDENCE_HINT + state["evidence"])
+    if state.get("route") == "change_flow":
+        parts.append(CHANGE_JUDGE_HINT + json.dumps(
+            state.get("service_data", {}), ensure_ascii=False))
+    return "".join(parts)
 
 async def classify_intent(state) -> dict:
     query = state.get("resolved_query") or _user_text(state)
@@ -154,6 +235,45 @@ async def classify_intent(state) -> dict:
     if result.get("error"):
         trace["intent_error"] = result["error"]
     return {"intent": result["intent"], "intent_confidence": result["confidence"], "route": route, "trace": trace}
+
+
+async def retrieve_knowledge(state) -> dict:
+    """知识类问题强制检索；低置信问题落池，但不阻断 Agent 作答。"""
+    query_raw = _user_text(state)
+    understood = await query_understanding.understand(query_raw)
+    query = understood["standard"]
+    bm25_text = query + (
+        " " + " ".join(understood["expanded"]) if understood["expanded"] else "")
+
+    hits = await retrieval.search_knowledge(
+        query, strategy="hybrid_rerank", bm25_text=bm25_text)
+    confidence = compute_evidence_confidence(hits)
+    snapshot = snapshot_from_hits(hits)
+
+    arranged = retrieval.arrange_head_tail(hits)
+    citations = [
+        {"n": i + 1, "id": hit["id"], "section_path": hit["section_path"],
+         "question": hit["question"], "answer": hit["answer"],
+         "content_type": hit["content_type"]}
+        for i, hit in enumerate(arranged)
+    ]
+    evidence = "\n".join(
+        f"[{citation['n']}] {citation['question']}: {citation['answer']}"
+        for citation in citations)
+
+    if confidence.score < settings.evidence_confidence_threshold:
+        reason = (
+            f"evidence_confidence={confidence.score:.3f} "
+            f"signals={json.dumps(confidence.signals, ensure_ascii=False)}")
+        await repository.insert_low_confidence(
+            state.get("conversation_id"), query_raw, "retrieval_low_conf", reason,
+            retrieved_chunks=snapshot)
+
+    return {"evidence_confidence": confidence.score, "retrieved_snapshot": snapshot,
+            "evidence": evidence, "citations": citations,
+            "trace": {"forced_rag": True, "evidence_confidence": confidence.score,
+                      "confidence_signals": confidence.signals}}
+
 
 async def script_reply(state) -> dict:
     answer = SCRIPT_REPLY_OTHER if state.get("intent") == "其他" else SCRIPT_REPLY_CHITCHAT

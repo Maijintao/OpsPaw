@@ -18,7 +18,7 @@ ANSWER_NODES = {"main_agent"}
 # 确定性节点把答复写在 state['answer'],整块作为 delta 吐出
 DETERMINISTIC_ANSWER_NODES = {"script_reply", "complaint_reply"}
 # 产出编号引用的检索节点(知识路 retrieve_knowledge + runbook 检索路 retrieve_runbook)
-CITATION_NODES = set()
+CITATION_NODES = {"retrieve_knowledge", "retrieve_runbook"}
 
 # ---- 轮次与 SSE 连接解耦 ----
 # 之前整轮图的执行拴在 SSE 生成器里,用户切页=连接断=生成器被取消=跑到一半的轮次
@@ -150,7 +150,8 @@ async def run_turn(user_id, message, conversation_id) -> dict:
     cid, summary, upto = await _ensure_conversation(user_id, conversation_id)
     msg_id = await repository.append_message(cid, "user", content=message)
     # ch09:langfuse_session_id 让同一会话多轮在 Langfuse 界面串成一组(未挂回调时无害)
-    config = {"configurable": {"thread_id": str(cid)}}
+    config = {"configurable": {"thread_id": str(cid)},
+              "metadata": {"langfuse_session_id": str(cid)}}
     final = await get_graph().ainvoke(
         _graph_input(user_id, message, cid, msg_id, summary, upto), config)
     await summarizer.maybe_schedule_summary(cid)   # ch07 轮后触发检查(后台跑,不阻塞返回)
@@ -175,7 +176,8 @@ async def _stream_events(cid: int, stream_source) -> AsyncIterator[dict]:
     """astream 多模式 → 事件 dict。stream_source 为 _graph_input(...)(新一轮)或 Command(resume=...)(续跑)。
     遇 interrupt(updates 块含 __interrupt__,Task 1 冒烟钉死)→ 吐 interrupt 事件并结束本次流
     (前端点选后走 /api/actions/resume 续流)。"""
-    config = {"configurable": {"thread_id": str(cid)}}
+    config = {"configurable": {"thread_id": str(cid)},
+              "metadata": {"langfuse_session_id": str(cid)}}
     actions: list = []
     pending_interrupt = None
     async for mode, chunk in get_graph().astream(
