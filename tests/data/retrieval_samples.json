@@ -1,0 +1,7 @@
+[
+  {"query": "CPU 超多少会告警", "expect_answer_contains": "80"},
+  {"query": "内存告警线是多少", "expect_answer_contains": "70"},
+  {"query": "变更窗口是几点", "expect_answer_contains": "02:00"},
+  {"query": "服务挂了能直接重启吗", "expect_answer_contains": "免审批"},
+  {"query": "怎么查服务的日志", "expect_answer_contains": "search_log"}
+]
