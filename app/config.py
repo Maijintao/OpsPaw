@@ -1,3 +1,4 @@
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,6 +10,20 @@ class Settings(BaseSettings):
     chat_thinking: str = ""
     chat_reasoning_effort: str = ""
     chat_reasoning_split: str = ""
+    embed_base_url: str = "https://api.siliconflow.cn/v1"
+    embed_model: str = "BAAI/bge-m3"
+    embed_api_key: str
+    rerank_base_url: str = "https://api.siliconflow.cn/v1"
+    rerank_model: str = "BAAI/bge-reranker-v2-m3"
+    rerank_api_key: str
+    recall_top_k: int = 50
+    rerank_top_k: int = 10
+    subquery_split: bool = True
+    rerank_min_score: float = 0.3
+    milvus_uri: str = Field(
+        default="http://localhost:19530",
+        validation_alias=AliasChoices("MILVUS_URI", "MILVUS_LITE_URI"),
+    )
     token_budget: int = 2000
     database_url: str = "mysql+asyncmy://root:root@localhost:3306/opspaw"
     test_database_url: str = "mysql+asyncmy://root:root@localhost:3306/opspaw_test"
@@ -30,6 +45,7 @@ class Settings(BaseSettings):
     langfuse_secret_key: str = ""
     langfuse_base_url: str = ""
     classifier_base_url: str = "http://127.0.0.1:8110"
+    evidence_confidence_threshold: float = 0.26
 
 
 settings = Settings()
