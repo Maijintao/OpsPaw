@@ -26,6 +26,7 @@ from app.api.settings import router as settings_router
 from app.api.topics import router as topics_router
 from app.api.kb import router as kb_router
 from app.api.feedback import router as feedback_router
+from app.api.review import router as review_router
 
 
 @asynccontextmanager
@@ -71,6 +72,7 @@ app.include_router(settings_router)
 app.include_router(topics_router)
 app.include_router(kb_router)
 app.include_router(feedback_router)
+app.include_router(review_router)
 
 _STATIC = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=_STATIC), name="static")
@@ -142,6 +144,11 @@ async def topics_page() -> FileResponse:
 @app.get("/kb", include_in_schema=False)
 async def kb_page() -> FileResponse:
     return FileResponse(_STATIC / "kb.html")
+
+
+@app.get("/review", include_in_schema=False)
+async def review_page() -> FileResponse:
+    return FileResponse(_STATIC / "review.html")
 
 
 @app.get("/incidents", include_in_schema=False)
