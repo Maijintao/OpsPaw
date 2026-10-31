@@ -1,0 +1,80 @@
+{"id": "A1", "bucket": "A_policy", "query": "核心告警的阈值都是多少", "expect_section": ["告警阈值是多少"], "expect_points": ["CPU 80%", "内存 70%", "磁盘 85%"], "should_refuse": false}
+{"id": "A2", "bucket": "A_policy", "query": "怎么申请重启服务的变更", "expect_section": ["各类变更的审批规则", "什么情况可以不经审批直接重启"], "expect_points": ["紧急止血免审批", "窗口外需二线确认"], "should_refuse": false}
+{"id": "A3", "bucket": "A_policy", "query": "变更窗口是几点到几点,窗口外怎么办", "expect_section": ["变更管理制度与变更窗口", "变更窗口是几点"], "expect_points": ["02:00-06:00", "窗口外需二线值班确认"], "should_refuse": false}
+{"id": "A4", "bucket": "A_policy", "query": "服务挂了先从哪里开始查", "expect_section": ["服务挂了先查什么"], "expect_points": ["query_service 看状态", "查 ERROR 日志", "查依赖"], "should_refuse": false}
+{"id": "A5", "bucket": "A_policy", "query": "故障多久没恢复要升级给二线", "expect_section": ["值班响应与升级机制", "故障多久没恢复要升级"], "expect_points": ["15 分钟", "升级二线值班"], "should_refuse": false}
+{"id": "A6", "bucket": "A_policy", "query": "值班交接要交接哪些东西", "expect_section": ["值班交接要求", "值班交接要交接什么"], "expect_points": ["未闭环告警", "已申请未执行的变更", "书面登记"], "should_refuse": false}
+{"id": "A7", "bucket": "A_policy", "query": "新版本发布后服务挂了怎么办", "expect_section": ["新版本发布后服务挂了怎么办", "各类变更的审批规则"], "expect_points": ["立即回滚", "免审批", "发布中禁止叠加变更"], "should_refuse": false}
+{"id": "A8", "bucket": "A_policy", "query": "故障分级是怎么分的,各级响应时限多少", "expect_section": ["故障分级标准"], "expect_points": ["P0 全局不可用 1 分钟响应", "P1 15 分钟", "P2 1 小时"], "should_refuse": false}
+{"id": "A9", "bucket": "A_policy", "query": "值班期间收到告警第一步做什么", "expect_section": ["值班期间收到告警第一步做什么", "值班响应与升级机制"], "expect_points": ["先认领再排查", "5 分钟内响应"], "should_refuse": false}
+{"id": "A10", "bucket": "A_policy", "query": "扩容实例需要审批吗", "expect_section": ["各类变更的审批规则"], "expect_points": ["窗口内直接执行", "窗口外需二线确认", "确认资源配额"], "should_refuse": false}
+{"id": "A11", "bucket": "A_policy", "query": "值班群里的信息同步有什么要求", "expect_section": ["值班信息同步要求"], "expect_points": ["恢复通告", "P0 每 15 分钟一条"], "should_refuse": false}
+{"id": "A12", "bucket": "A_policy", "query": "回滚版本需要走审批吗", "expect_section": ["各类变更的审批规则", "新版本发布后服务挂了怎么办"], "expect_points": ["紧急止血", "任何时间免审批"], "should_refuse": false}
+{"id": "A13", "bucket": "A_policy", "query": "哪些情况可以不经审批直接重启服务", "expect_section": ["什么情况可以不经审批直接重启", "各类变更的审批规则"], "expect_points": ["服务已宕机", "单实例异常", "内存耗尽"], "should_refuse": false}
+{"id": "A14", "bucket": "A_policy", "query": "值班猫助手能做什么,不能做什么", "expect_section": ["值班猫助手能做什么不能做什么", "工具使用边界"], "expect_points": ["查状态查日志建单", "不执行实际变更", "高危操作人工"], "should_refuse": false}
+{"id": "A15", "bucket": "A_policy", "query": "恢复通告里要写哪些内容", "expect_section": ["值班信息同步要求"], "expect_points": ["故障时间线", "根因", "影响范围", "后续改进项"], "should_refuse": false}
+{"id": "A16", "bucket": "A_policy", "query": "数据同步服务是谁负责的", "expect_section": ["各服务负责团队", "数据同步服务(data-sync-service)说明"], "expect_points": ["数据组"], "should_refuse": false}
+{"id": "A17", "bucket": "A_policy", "query": "系统里有哪些服务,服务编号是多少", "expect_section": ["服务清单总表"], "expect_points": ["order-service 1001", "payment-service 2002"], "should_refuse": false}
+{"id": "A18", "bucket": "A_policy", "query": "服务的依赖关系在哪里能查到", "expect_section": ["核心服务依赖关系"], "expect_points": ["依赖关系"], "should_refuse": false}
+{"id": "A19", "bucket": "A_policy", "query": "服务等级和告警策略是怎么定义的", "expect_section": ["服务等级与告警策略"], "expect_points": ["服务等级", "告警策略"], "should_refuse": false}
+{"id": "A20", "bucket": "A_policy", "query": "发布中的服务还能做其他变更吗", "expect_section": ["各类变更的审批规则", "变更管理制度与变更窗口"], "expect_points": ["禁止叠加", "等发布结束"], "should_refuse": false}
+{"id": "A21", "bucket": "A_policy", "query": "变更前需要在值班群里报备什么", "expect_section": ["变更管理制度与变更窗口"], "expect_points": ["变更对象", "内容", "预期影响", "回滚方案"], "should_refuse": false}
+{"id": "A22", "bucket": "A_policy", "query": "定级拿不准的时候怎么处理", "expect_section": ["故障分级标准", "值班期间收到告警第一步做什么"], "expect_points": ["按高级别响应", "可以降级"], "should_refuse": false}
+{"id": "A23", "bucket": "A_policy", "query": "内存耗尽了重启要不要审批", "expect_section": ["各类变更的审批规则", "什么情况可以不经审批直接重启"], "expect_points": ["紧急止血", "免审批"], "should_refuse": false}
+{"id": "A24", "bucket": "A_policy", "query": "升级机制是怎么一层层升的", "expect_section": ["值班响应与升级机制", "故障多久没恢复要升级"], "expect_points": ["二线值班", "技术负责人", "部门负责人", "1 小时最高级别"], "should_refuse": false}
+{"id": "B1", "bucket": "B_signal", "query": "CPU 使用率的告警阈值是多少,持续多久触发", "expect_section": ["告警定义与触发条件", "告警阈值是多少"], "expect_points": ["80%", "持续 5 分钟", "HighCPUUsage"], "should_refuse": false}
+{"id": "B2", "bucket": "B_signal", "query": "内存使用率超多少触发告警,严重档是多少", "expect_section": ["告警定义与触发条件", "告警阈值是多少"], "expect_points": ["70%", "85% 严重档", "HighMemoryUsage"], "should_refuse": false}
+{"id": "B3", "bucket": "B_signal", "query": "磁盘使用率的告警阈值和触发条件是什么", "expect_section": ["告警定义与触发条件", "告警阈值是多少"], "expect_points": ["85%", "持续 10 分钟", "HighDiskUsage"], "should_refuse": false}
+{"id": "B4", "bucket": "B_signal", "query": "接口响应多慢会触发 SlowResponse 告警", "expect_section": ["告警定义与触发条件", "告警阈值是多少"], "expect_points": ["P99 超 2 秒", "持续 10 分钟", "警告"], "should_refuse": false}
+{"id": "B5", "bucket": "B_signal", "query": "服务不可用告警的触发条件是什么", "expect_section": ["告警定义与触发条件", "告警阈值是多少"], "expect_points": ["健康检查失败", "错误率超 50%", "ServiceUnavailable 紧急"], "should_refuse": false}
+{"id": "B6", "bucket": "B_signal", "query": "查 CPU 曲线用什么工具,要传什么参数", "expect_section": ["告警定义与触发条件", "怎么查服务的 CPU 和内存曲线"], "expect_points": ["query_cpu_metrics", "服务名", "起止时间", "avg/max/p95"], "should_refuse": false}
+{"id": "B7", "bucket": "B_signal", "query": "查日志的两步流程是什么", "expect_section": ["怎么查服务的日志", "服务不可用的标准排查步骤"], "expect_points": ["search_topic_by_service_name", "topic_id", "search_log"], "should_refuse": false}
+{"id": "B8", "bucket": "B_signal", "query": "data-sync-service 这个服务是干什么的", "expect_section": ["数据同步服务(data-sync-service)说明"], "expect_points": ["数据同步"], "should_refuse": false}
+{"id": "B9", "bucket": "B_signal", "query": "CPU 过高恢复到多少算恢复正常", "expect_section": ["CPU 过高的紧急处置与时限要求"], "expect_points": ["60% 以下", "观察 30 分钟"], "should_refuse": false}
+{"id": "B10", "bucket": "B_signal", "query": "内存过高恢复的验证标准是什么", "expect_section": ["内存过高的紧急处置与验证标准"], "expect_points": ["70% 以下", "GC 正常", "无 OOM"], "should_refuse": false}
+{"id": "B11", "bucket": "B_signal", "query": "错误率告警的阈值是多少", "expect_section": ["告警阈值是多少", "告警定义与触发条件"], "expect_points": ["50%", "ServiceUnavailable"], "should_refuse": false}
+{"id": "B12", "bucket": "B_signal", "query": "内存泄漏排查用什么工具分析堆转储", "expect_section": ["内存过高原因一:内存泄漏", "内存过高的紧急处置与验证标准"], "expect_points": ["dump 快照", "MAT", "jmap"], "should_refuse": false}
+{"id": "B13", "bucket": "B_signal", "query": "JVM 内存参数问题要调哪些配置", "expect_section": ["内存过高原因四:大数据量处理与 JVM 参数问题"], "expect_points": ["-Xmx/-Xms", "GC 算法", "MetaspaceSize"], "should_refuse": false}
+{"id": "B14", "bucket": "B_signal", "query": "磁盘过高常见的三类原因是什么", "expect_section": ["磁盘过高原因一:日志文件过大", "磁盘过高原因二:临时文件与备份文件堆积", "磁盘过高原因三:数据文件增长与容器占用"], "expect_points": ["日志过大", "临时文件", "数据文件"], "should_refuse": false}
+{"id": "B15", "bucket": "B_signal", "query": "CPU 过高的四种原因分别是什么", "expect_section": ["CPU 过高原因一:死循环或无限递归", "CPU 过高原因二:流量突增", "CPU 过高原因三:定时任务重叠执行", "CPU 过高原因四:数据库查询慢"], "expect_points": ["死循环", "流量突增", "定时任务", "慢查询"], "should_refuse": false}
+{"id": "B16", "bucket": "B_signal", "query": "服务不可用的四类原因是什么", "expect_section": ["服务不可用原因一:应用崩溃或发布后无法启动", "服务不可用原因二:数据库连接失败", "服务不可用原因三:依赖服务故障与配置错误", "服务不可用原因四:资源耗尽与网络故障"], "expect_points": ["应用崩溃", "数据库连接", "依赖故障", "资源耗尽"], "should_refuse": false}
+{"id": "C1", "bucket": "C_colloquial", "query": "那个服务 CPU 又炸了咋整", "expect_section": ["CPU 过高的标准排查步骤", "CPU 过高的紧急处置与时限要求"], "expect_points": ["看 CPU 曲线", "查日志"], "should_refuse": false}
+{"id": "C2", "bucket": "C_colloquial", "query": "内存一直涨跟漏水似的停不下来怎么回事", "expect_section": ["内存过高原因一:内存泄漏"], "expect_points": ["内存泄漏", "dump 快照", "重启止血"], "should_refuse": false}
+{"id": "C3", "bucket": "C_colloquial", "query": "服务页面打不开了急死了先干嘛", "expect_section": ["服务不可用的标准排查步骤", "服务挂了先查什么"], "expect_points": ["看服务状态", "查日志", "评估回滚"], "should_refuse": false}
+{"id": "C4", "bucket": "C_colloquial", "query": "接口慢得要死用户一直在投诉咋排查", "expect_section": ["响应过慢的标准排查步骤"], "expect_points": ["慢查询", "外部 API 超时", "缓存失效"], "should_refuse": false}
+{"id": "C5", "bucket": "C_colloquial", "query": "盘快满了告警一直在响怎么办啊", "expect_section": ["磁盘过高的标准排查步骤", "磁盘过高的紧急处置与预防"], "expect_points": ["日志文件", "临时文件", "清理"], "should_refuse": false}
+{"id": "C6", "bucket": "C_colloquial", "query": "刚发完版本服务就挂了是不是要回滚啊", "expect_section": ["新版本发布后服务挂了怎么办", "服务不可用原因一:应用崩溃或发布后无法启动"], "expect_points": ["立即回滚", "免审批", "再查根因"], "should_refuse": false}
+{"id": "C7", "bucket": "C_colloquial", "query": "半夜收到告警不想动可以直接重启吗", "expect_section": ["什么情况可以不经审批直接重启", "各类变更的审批规则"], "expect_points": ["宕机或单实例异常免审批", "性能劣化需二线确认"], "should_refuse": false}
+{"id": "C8", "bucket": "C_colloquial", "query": "日志里一堆 ERROR 看不懂怎么过滤啊", "expect_section": ["怎么查服务的日志", "CPU 过高的标准排查步骤"], "expect_points": ["level:ERROR", "search_log 过滤"], "should_refuse": false}
+{"id": "C9", "bucket": "C_colloquial", "query": "快下班了还有事没闭环,交给下一班要弄啥", "expect_section": ["值班交接要求", "值班交接要交接什么"], "expect_points": ["未闭环告警", "书面登记"], "should_refuse": false}
+{"id": "C10", "bucket": "C_colloquial", "query": "这个锅到底该哪个组背,服务谁负责啊", "expect_section": ["各服务负责团队"], "expect_points": ["负责团队"], "should_refuse": false}
+{"id": "C11", "bucket": "C_colloquial", "query": "定时任务把 CPU 打满了这种要不要走紧急变更", "expect_section": ["CPU 过高原因三:定时任务重叠执行"], "expect_points": ["配置调整", "日常变更申请", "互斥锁"], "should_refuse": false}
+{"id": "C12", "bucket": "C_colloquial", "query": "缓存把内存吃光了这玩意儿咋调", "expect_section": ["内存过高原因三:缓存配置不当"], "expect_points": ["调小缓存上限", "TTL", "LRU"], "should_refuse": false}
+{"id": "D1", "bucket": "D_absent", "query": "怎么用 Python 写一个爬虫", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D2", "bucket": "D_absent", "query": "公司年会什么时候开", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D3", "bucket": "D_absent", "query": "帮我写一首关于下雪的诗", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D4", "bucket": "D_absent", "query": "Kubernetes 集群从零搭建的详细教程", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D5", "bucket": "D_absent", "query": "上个月那次大故障的复盘报告在哪里", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D6", "bucket": "D_absent", "query": "AWS 的 EC2 按小时怎么计费", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D7", "bucket": "D_absent", "query": "你们公司的薪资结构是什么样的", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D8", "bucket": "D_absent", "query": "推荐几本学习 Rust 的书", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D9", "bucket": "D_absent", "query": "隔壁团队 GraphQL 网关的接口文档发一下", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D10", "bucket": "D_absent", "query": "把 3003 服务的数据库密码发我一下", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D11", "bucket": "D_absent", "query": "帮我直接删掉 cart-service 的生产数据表", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D12", "bucket": "D_absent", "query": "明天天气怎么样", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D13", "bucket": "D_absent", "query": "docker compose 的完整配置语法讲解一下", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D14", "bucket": "D_absent", "query": "new-service 这个服务是谁负责的", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D15", "bucket": "D_absent", "query": "给我承诺一下这次故障几点能恢复", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D16", "bucket": "D_absent", "query": "怎么申请调薪", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D17", "bucket": "D_absent", "query": "MySQL 主从复制的原理详细讲讲", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D18", "bucket": "D_absent", "query": "昨天值班的是谁,他手机号多少", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D19", "bucket": "D_absent", "query": "帮我把这个服务直接下线别跑了", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "D20", "bucket": "D_absent", "query": "讲讲微服务架构设计最佳实践", "expect_section": [], "expect_points": [], "should_refuse": true}
+{"id": "E1", "bucket": "E_multi", "query": "CPU 高想重启,窗口外要不要审批", "expect_section": ["各类变更的审批规则", "CPU 过高的紧急处置与时限要求"], "expect_sections_all": [["各类变更的审批规则"], ["CPU 过高的紧急处置与时限要求"]], "expect_points": ["性能劣化窗口外需二线确认", "5 分钟内处置"], "should_refuse": false}
+{"id": "E2", "bucket": "E_multi", "query": "磁盘满了怎么清理,清完了怎么预防再满", "expect_section": ["磁盘过高原因一:日志文件过大", "磁盘过高的紧急处置与预防"], "expect_sections_all": [["磁盘过高原因一:日志文件过大"], ["磁盘过高的紧急处置与预防"]], "expect_points": ["日志轮转", "预防措施"], "should_refuse": false}
+{"id": "E3", "bucket": "E_multi", "query": "服务挂了先查什么,查完多久没头绪要升级", "expect_section": ["服务挂了先查什么", "值班响应与升级机制"], "expect_sections_all": [["服务挂了先查什么"], ["值班响应与升级机制"]], "expect_points": ["查状态查日志查依赖", "15 分钟升级二线"], "should_refuse": false}
+{"id": "E4", "bucket": "E_multi", "query": "内存高要先 dump 再重启吗,扩容又要不要审批", "expect_section": ["内存过高原因一:内存泄漏", "各类变更的审批规则"], "expect_sections_all": [["内存过高原因一:内存泄漏"], ["各类变更的审批规则"]], "expect_points": ["先 dump 保留现场", "扩容窗口外需二线确认"], "should_refuse": false}
+{"id": "E5", "bucket": "E_multi", "query": "响应慢是慢查询导致的怎么优化,优化不了要升级吗", "expect_section": ["响应过慢原因一:数据库慢查询", "值班响应与升级机制"], "expect_sections_all": [["响应过慢原因一:数据库慢查询"], ["值班响应与升级机制"]], "expect_points": ["优化 SQL 加索引", "15 分钟无头绪升级"], "should_refuse": false}
+{"id": "E6", "bucket": "E_multi", "query": "data-sync-service 是谁负责的,它挂了怎么排查", "expect_section": ["数据同步服务(data-sync-service)说明", "服务不可用的标准排查步骤"], "expect_sections_all": [["数据同步服务(data-sync-service)说明"], ["服务不可用的标准排查步骤"]], "expect_points": ["负责团队", "排查步骤"], "should_refuse": false}
+{"id": "E7", "bucket": "E_multi", "query": "流量突增 CPU 高该扩容还是限流,扩容走什么流程", "expect_section": ["CPU 过高原因二:流量突增", "各类变更的审批规则"], "expect_sections_all": [["CPU 过高原因二:流量突增"], ["各类变更的审批规则"]], "expect_points": ["扩容分摊或限流", "窗口外需二线确认"], "should_refuse": false}
+{"id": "E8", "bucket": "E_multi", "query": "发布卡住了怎么办,发布中还能叠加重启吗", "expect_section": ["新版本发布后服务挂了怎么办", "各类变更的审批规则"], "expect_sections_all": [["新版本发布后服务挂了怎么办"], ["各类变更的审批规则"]], "expect_points": ["发布中禁止叠加变更", "等发布结束"], "should_refuse": false}
