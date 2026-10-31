@@ -45,6 +45,16 @@ CHANGE_JUDGE_HINT = (
     "## 服务数据\n"
 )
 
+SELF_CHECK_SYSTEM = """你是检索质量评审员。给定值班同学的问题和检索到的知识证据,判断这些证据是否足以准确回答该问题。
+- useful=true:证据包含回答该问题所需的关键信息。
+- useful=false:证据与问题无关、或缺少关键信息、或只能部分回答核心诉求。
+- reason:一句话说明判断依据。
+严格只看证据是否够答,不要脑补证据外的知识。"""
+
+SELF_CHECK_PROMPT = ChatPromptTemplate.from_messages(
+    [("system", SELF_CHECK_SYSTEM), ("human", "值班同学的问题:{query}\n\n检索证据:\n{evidence}")]
+)
+
 COREF_REWRITE_SYSTEM = """## 角色
 你是运维值班助手在检索/判意图之前的「问题补全器」。把值班同学这一轮依赖上下文才看得懂的话,结合最近几轮对话,改写成一句脱离对话也能独立看懂的完整问题。
 
