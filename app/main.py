@@ -25,6 +25,7 @@ from app.api.observability import router as observability_router
 from app.api.settings import router as settings_router
 from app.api.topics import router as topics_router
 from app.api.kb import router as kb_router
+from app.api.feedback import router as feedback_router
 
 
 @asynccontextmanager
@@ -69,6 +70,7 @@ app.include_router(observability_router)
 app.include_router(settings_router)
 app.include_router(topics_router)
 app.include_router(kb_router)
+app.include_router(feedback_router)
 
 _STATIC = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=_STATIC), name="static")
