@@ -1,0 +1,111 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    env_file: .env.deploy
+    environment:
+      CHAT_MODEL: ${CHAT_MODEL:?请填写 CHAT_MODEL}
+      CHAT_BASE_URL: ${CHAT_BASE_URL:?请填写 CHAT_BASE_URL}
+      CHAT_API_KEY: ${CHAT_API_KEY:?请填写 CHAT_API_KEY}
+      EMBED_API_KEY: ${EMBED_API_KEY:?请填写 EMBED_API_KEY}
+      RERANK_API_KEY: ${RERANK_API_KEY:?请填写 RERANK_API_KEY}
+      ACCESS_USER: ${ACCESS_USER:?请填写 ACCESS_USER}
+      ACCESS_PASS: ${ACCESS_PASS:?请填写 ACCESS_PASS}
+      DATABASE_URL: mysql+asyncmy://root:${MYSQL_ROOT_PASSWORD:?请填写 MYSQL_ROOT_PASSWORD}@mysql:3306/opspaw
+      MILVUS_URI: http://milvus:19530
+    ports:
+      - "${OPSPAW_PORT:-8000}:8000"
+    volumes:
+      - app-data:/app/data
+    depends_on:
+      mysql:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请填写 MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_DATABASE: opspaw
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./sql/ch02-ddl.sql:/docker-entrypoint-initdb.d/01-ch02-ddl.sql:ro
+      - ./sql/ch02-seed.sql:/docker-entrypoint-initdb.d/02-ch02-seed.sql:ro
+      - ./sql/ch03-ddl.sql:/docker-entrypoint-initdb.d/03-ch03-ddl.sql:ro
+      - ./sql/ch03-staging-review.sql:/docker-entrypoint-initdb.d/04-ch03-staging-review.sql:ro
+      - ./sql/ch04-ddl.sql:/docker-entrypoint-initdb.d/05-ch04-ddl.sql:ro
+      - ./sql/ch07-ddl.sql:/docker-entrypoint-initdb.d/06-ch07-ddl.sql:ro
+      - ./sql/ch08-ddl.sql:/docker-entrypoint-initdb.d/07-ch08-ddl.sql:ro
+      - ./sql/ch09-ddl.sql:/docker-entrypoint-initdb.d/08-ch09-ddl.sql:ro
+      - ./sql/ch10-ddl.sql:/docker-entrypoint-initdb.d/09-ch10-ddl.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h 127.0.0.1 -u root --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.16
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls=http://0.0.0.0:2379 --data-dir=/etcd
+    volumes:
+      - etcd-data:/etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2024-05-28T17-19-04Z
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    command: minio server /minio_data --console-address :9001
+    volumes:
+      - minio-data:/minio_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  milvus:
+    image: milvusdb/milvus:v2.6.22
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - milvus-data:/var/lib/milvus
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 90s
+    restart: unless-stopped
+
+volumes:
+  app-data:
+  mysql-data:
+  etcd-data:
+  minio-data:
+  milvus-data:

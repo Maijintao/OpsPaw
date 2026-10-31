@@ -1,5 +1,33 @@
 # OpsPaw 运行与部署
 
+## 一键部署
+
+安装 Docker 和 Docker Compose，准备可访问的对话、embedding 和 rerank API。对话模型需要支持工具调用，embedding 模型需要输出 1024 维向量。
+
+复制 `.env.deploy.example` 为 `.env.deploy`，填写模型配置、API 密钥、`MYSQL_ROOT_PASSWORD`、`ACCESS_USER` 和 `ACCESS_PASS`。MySQL 密码使用英文字母和数字。启动服务：
+
+```bash
+docker compose --env-file .env.deploy -f compose.deploy.yml up -d --build
+```
+
+首次启动会初始化 MySQL、Milvus 和项目知识库，随后启动应用。使用以下命令查看进度：
+
+```bash
+docker compose --env-file .env.deploy -f compose.deploy.yml logs -f app
+```
+
+访问 `http://localhost:8000`；修改 `OPSPAW_PORT` 可以更换端口。数据库、向量数据和应用数据保存在 Docker 数据卷中，普通停止命令会保留这些数据：
+
+```bash
+docker compose --env-file .env.deploy -f compose.deploy.yml down
+```
+
+API 配置或登录密码修改后，重新运行启动命令。MySQL 密码在数据卷首次创建时生效；已有数据库密码需要在 MySQL 内同步修改。配置文件包含凭据，请妥善保管。
+
+真实诊断需要在页面接入实际观测服务。主题分类器需要另行准备模型文件和推理服务。
+
+## 开发运行
+
 开发时直接运行应用，连接已有 MySQL、Milvus 和观测服务。以下命令在项目根目录执行，不创建或启动容器。
 
 ## 安装与配置

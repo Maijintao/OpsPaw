@@ -2,5 +2,6 @@
 __pycache__/
 .venv/
 .env
+.env.deploy
 data/aiopslab/runs/
 log/

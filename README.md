@@ -14,7 +14,35 @@ OpsPaw 是面向运维值班的故障调查与处理应用，使用 Python、Fas
 | 修复 | 根因确认、修复计划、连接器、操作授权、执行记录和结果检查 |
 | 管理界面 | 平台与数据源、Grafana 面板、知识库、模型配置、成本与数据保留 |
 
-## 运行
+## 一键部署
+
+准备 Docker 和 Docker Compose，以及支持工具调用的远端对话模型、1024 维 embedding 模型和 rerank 服务。复制部署配置并填写模型地址、模型名称、API 密钥和登录密码：
+
+```bash
+cp .env.deploy.example .env.deploy
+```
+
+`MYSQL_ROOT_PASSWORD` 使用英文字母和数字。填写完成后，在项目目录运行：
+
+```bash
+docker compose --env-file .env.deploy -f compose.deploy.yml up -d --build
+```
+
+首次启动会创建数据库、导入项目知识文档并调用 embedding 服务建立知识库。启动完成后访问 `http://localhost:8000`；端口可通过 `OPSPAW_PORT` 修改。查看启动进度：
+
+```bash
+docker compose --env-file .env.deploy -f compose.deploy.yml logs -f app
+```
+
+停止服务并保留数据：
+
+```bash
+docker compose --env-file .env.deploy -f compose.deploy.yml down
+```
+
+远端 API 需要网络连接和有效凭据。真实故障诊断需要另外接入 Prometheus、Jaeger 等观测服务；主题分类器需要单独准备模型文件。详细说明见 [DEPLOY.md](DEPLOY.md)。
+
+## 开发运行
 
 需要 Python 3.12 及以上、uv、MySQL 和模型服务。知识检索需要 Milvus，BM25 和完整检索评估使用 Milvus Standalone。开发时连接已有基础服务，直接运行 Python 进程。
 
