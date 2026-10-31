@@ -1,0 +1,10 @@
+[
+  {
+    "conversation": "user: 变更窗口是几点啊\nassistant: 常规变更窗口为每日 02:00-06:00(业务低峰),窗口外变更默认需二线值班确认。",
+    "expect_question_contains": "变更窗口"
+  },
+  {
+    "conversation": "user: 我的工单 T2026001 到哪一步了\nassistant: 已记录您的工单查询诉求,工单进度请以工单系统为准。",
+    "expect_empty": true
+  }
+]

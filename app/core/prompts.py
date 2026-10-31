@@ -88,6 +88,17 @@ FAITHFULNESS_PROMPT = ChatPromptTemplate.from_messages(
     [("system", FAITHFULNESS_SYSTEM), ("human", "检索证据:\n{evidence}\n\n助手回答:\n{answer}")]
 )
 
+MINING_SYSTEM = """你是运维知识库构建助手。下面是若干条历史值班对话(值班同学问 + 助手答)。
+请从中抽取可复用的问答对,用于沉淀到 FAQ 知识库。要求:
+- 只抽有普适价值的问答(流程、规范、阈值、处置步骤等),忽略闲聊和纯个案。
+- question 用简洁的通用问法,去掉具体服务名和人名;answer 忠于原答、不编造承诺。
+- 一条对话可能不含任何可复用问答,此时不要硬抽。
+- 故障时效统一表述为「以值班群内同步为准」。"""
+
+MINING_PROMPT = ChatPromptTemplate.from_messages(
+    [("system", MINING_SYSTEM), ("human", "历史对话:\n{conversations}")]
+)
+
 COREF_REWRITE_SYSTEM = """## 角色
 你是运维值班助手在检索/判意图之前的「问题补全器」。把值班同学这一轮依赖上下文才看得懂的话,结合最近几轮对话,改写成一句脱离对话也能独立看懂的完整问题。
 
