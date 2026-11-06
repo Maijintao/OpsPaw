@@ -354,7 +354,6 @@ async def errors_detail() -> dict:
         "total_fp": evaluation["total_fp"], "total_fn": evaluation["total_fn"],
         "pairs": [{"missed": m, "grabbed": g, "count": c, "severity": SEVERITY.get(m)}
                   for (m, g), c in sorted(pairs.items(), key=lambda x: -x[1])],
-        # 三种错各自的修法配方(课程结论,不是每条错例的具体补句)
         "recipes": {
             "漏打": "次要诉求被主旋律淹没 → 补「主诉求 + 顺带诉求」的双标签句",
             "错位": "某个词横跨两类 → 成对补对照句,两边同时喂才学得会看语境",

@@ -11,7 +11,7 @@ from langchain_core.tools import BaseTool
 logger = logging.getLogger(__name__)
 
 # 权限我们侧独裁:写清单按名字定;未登记(含所有 MCP)工具一律按只读放行。
-# 生产环境接不受信 Server 时应默认拒绝未知写操作;本章两台自建 Server 都是查询类,只读放行足够。
+# 生产环境接不受信 Server 时应默认拒绝未知写操作。
 WRITE_TOOLS: set[str] = {"create_ticket", "create_alert_intake",
                             "update_alert_intake", "delete_alert_intake"}
 
@@ -95,7 +95,7 @@ def get_builtin_spec(name: str) -> ToolSpec | None:
 
 
 async def get_all_specs() -> list[ToolSpec]:
-    """内置 + MCP 现拉合并;重名 builtin 优先、后到丢弃告警(本章无重名:监控/日志工具均由 MCP 提供)。
+    """内置 + MCP 现拉合并;重名 builtin 优先、后到丢弃告警。
 
     返回顺序必须稳定,别改成 set 或加 sorted:tools 定义跟 system 一样在模型请求的可缓存
     前缀里,顺序抖一下前缀就整段 miss。现在的顺序由三件事保证——scan_builtin 走的 pkgutil

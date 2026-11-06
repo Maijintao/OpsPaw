@@ -1,9 +1,3 @@
-"""日志检索 MCP Server(仿腾讯云 CLS,mock 数据,不接真实日志系统、不建表)。
-独立进程:uv run python mcp_servers/log_server.py
-工具链:按服务名找日志主题(search_topic_by_service_name)→ 拿 topic_id → 按时间窗+过滤条件
-检索日志(search_log);get_current_timestamp 辅助拼毫秒时间戳。
-数据按 topic 动态生成:应用日志持续输出 INFO,便于演示「服务报错 → 查日志定位」的排障链路。
-实装 mcp==1.28.1:FastMCP(name, host=, port=) + run(transport="streamable-http"),路径默认 /mcp。"""
 import logging
 import os
 import re
@@ -20,7 +14,6 @@ logger = logging.getLogger("log_mcp")
 mcp = FastMCP("logs",
               host="127.0.0.1", port=int(os.environ.get("PORT", "8102")))
 
-# mock 主题清单:服务名 → 日志主题。真实系统里这一步是按服务元数据查。
 _MOCK_TOPICS = [
     {"topic_id": "topic-001", "topic_name": "数据同步服务日志",
      "service_name": "data-sync-service", "region_code": "ap-guangzhou",

@@ -30,7 +30,6 @@ async def test_create_ticket_writes_and_flips_conversation_status(db_session_fac
         assert conv.status == "已转人工"          # 会话状态流转
 
 
-# ---- ch07 会话上下文管理 ----
 
 
 async def test_conversation_summary_roundtrip(db_session_factory, db_clean):

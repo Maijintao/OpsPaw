@@ -99,7 +99,6 @@ async def create_ticket(conversation_id: int, description: str, ticket_type: str
     return ticket_no
 
 
-# ---- ch07 会话上下文管理(滑窗 + 异步摘要)----
 
 
 async def count_messages_after(conversation_id: int, after_id: int | None) -> int:
@@ -191,7 +190,6 @@ async def update_conversation_summary(conversation_id: int, summary: str, upto_m
             await s.commit()
 
 
-# ---- ch03 知识库 chunk / 暂存表 ----
 
 
 async def insert_knowledge_chunk(
@@ -417,7 +415,6 @@ async def list_conversations_with_messages() -> list[tuple[int, list[Message]]]:
         return out
 
 
-# ---- ch09 数据飞轮(待审队列 + 评估轮次)----
 
 
 async def fetch_unmatched_low_conf(limit: int) -> list[LowConfidenceQuestion]:
@@ -432,7 +429,7 @@ async def fetch_unmatched_low_conf(limit: int) -> list[LowConfidenceQuestion]:
 
 
 async def list_review_candidates(limit: int = 200) -> list[dict]:
-    """查重候选:全部状态的缺口行(用户拍板:比全部,驳回即终审),updated_at 倒序截断防 token 爆。"""
+    """查重候选:全部状态的缺口行,按 updated_at 倒序截断。"""
     async with db.async_session() as s:
         result = await s.execute(
             select(ReviewQueue.id, ReviewQueue.normalized_question)
@@ -533,7 +530,6 @@ async def list_eval_runs(limit: int = 10) -> list[EvalRun]:
         return list(result.scalars())
 
 
-# ---- ch08 工具审计 ----
 
 
 async def insert_tool_audit(
@@ -560,7 +556,6 @@ async def insert_tool_audit(
         await s.commit()
 
 
-# ---------- ch10 主题分类 ----------
 
 def _pool_text_stmt():
     """池问题取文本的公共查询:优先归并后的标准化问法,没归并退回原话。"""
@@ -685,7 +680,6 @@ async def topic_questions(label: str, page: int = 1, size: int = 20) -> dict:
             "pages": pages, "items": items}
 
 
-# ---- ch04 编造个案台账 ----
 
 
 async def upsert_faith_case(eval_id: str, bucket: str, query: str, answer: str, reason: str,

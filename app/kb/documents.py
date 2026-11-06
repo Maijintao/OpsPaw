@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from app.kb import chunking
 
 _KEY_TERMS = ("阈值", "告警", "审批", "变更窗口", "回滚", "扩容", "重启", "灰度", "恢复", "值班")
-# ch09 起跨模块复用(confidence 关键条款信号 / review 写回打标),导出公共名
 KEY_TERMS = _KEY_TERMS
 
 

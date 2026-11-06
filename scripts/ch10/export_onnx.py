@@ -1,6 +1,6 @@
 """ch10 ONNX 导出:torch 模型 → onnx(变长 batch/seq),导出后跑测试集校验与 torch 预测完全一致。
 注意:torch 2.9+ 的 torch.onnx.export 默认 dynamo=True,导 HF 模型此处显式 dynamo=False
-走 TorchScript 导出器 + dynamic_axes 稳定路线(Context7 查证)。运行:make ch10-export。
+走 TorchScript 导出器 + dynamic_axes。运行:make ch10-export。
 落 reports/export_report.json 给验收页读(/acceptance):校验条数、不一致条数、产物大小。"""
 import datetime as dt
 import json

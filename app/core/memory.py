@@ -3,7 +3,7 @@ from langchain_core.messages.utils import count_tokens_approximately, trim_messa
 
 
 class SessionStore:
-    """内存会话存储,session_id -> 消息列表。本章不做持久化。"""
+    """内存会话存储,session_id -> 消息列表。"""
 
     def __init__(self) -> None:
         self._sessions: dict[str, list[BaseMessage]] = {}
@@ -26,7 +26,6 @@ def trim_history(messages: list[BaseMessage], max_tokens: int) -> list[BaseMessa
     )
 
 
-# ---- ch07 锚点切窗 + 摘要注入(双层上下文的滑窗层)----
 
 _DB_ID_PREFIX = "db-"
 

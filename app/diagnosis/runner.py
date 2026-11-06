@@ -860,10 +860,6 @@ async def _run(run: dict, service: str, symptom: str,
     _emit(run, "localize", "Top 候选:" + ("、".join(
         f"{c['service']}(得分 {c['score']},方向 {c['direction']})" for c in cands) or "无异常候选"))
 
-    # ⑤归因 = OpsAgent 三 agent 协作(ASE Industry 2026,AIOpsLab 排行榜第一的方案;
-    # 源码原样保留在 opsagent/,本层喂活数据并桥接 LLM)。编排序列:异常检测/分诊/
-    # 根因定位 think → 两两交叉评审 → refine → Judge 终裁。旧的单次归因/白名单补查/
-    # 门禁/证伪随本次替换退役(备份:~/Desktop/OpsPaw_归因板块备份_20261015/)。
     _emit(run, "attribute", "证据由异常哨兵、故障诊断、根因侦探三个 agent 协商归因…")
     _loki_src, _loki_target = await _loki_for(service, platform)
     _attr_err: str | None = None

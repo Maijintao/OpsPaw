@@ -1,6 +1,4 @@
 -- =============================================================
--- ch02 · Function Calling 工具链 · 建表 DDL
--- 本章新建:faq / conversations / messages / tickets 四张表
 -- 服务目录、监控与日志走工具内演示数据,不建表
 -- 全库统一 ENGINE=InnoDB、CHARSET=utf8mb4
 -- 建表顺序:先 conversations,再依赖它的 messages / tickets

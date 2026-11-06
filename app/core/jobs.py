@@ -31,7 +31,6 @@ class JobSpec:
 
 JOBS: dict[str, JobSpec] = {
     j.name: j for j in (
-        # ch03 知识库:离线建库那四步
         JobSpec("kb-preview", "材料清单与切块预览", ("make", "kb-preview"), "本地跑,不写库"),
         JobSpec("kb-build", "离线建库(文档切块 → pending)", ("make", "kb-build"), "需 mysql"),
         JobSpec("kb-mine", "对话挖知识(抽 QA → 去重 → pending)", ("make", "kb-mine"),
@@ -45,10 +44,8 @@ JOBS: dict[str, JobSpec] = {
         JobSpec("seed-conv", "灌历史会话种子", ("make", "seed-conv"), "需 docker mysql 容器"),
         JobSpec("kb-reset", "清库重建(清两表 + drop 集合)", ("make", "kb-reset"),
                 "需 mysql + Milvus;会清空知识库", heavy=True),
-        # ch04 检索质量:四策略对照评估(检索段确定性 + 生成段过 LLM 裁判)
         JobSpec("eval-rag", "RAG 评估(四策略对照)", ("make", "eval-rag"),
                 "需 Milvus Standalone + 已迁移知识库 + 嵌入/重排/聊天上游,分钟级", heavy=True),
-        # ch09 观测与成本:意图成本账、评估趋势、置信度阈值校准
         JobSpec("cost-report", "意图成本账", ("make", "cost-report"),
                 "需 Langfuse 在跑且窗口内有 trace"),
         JobSpec("eval-flywheel", "评估流水线(落一轮趋势)", ("make", "eval-flywheel"),
@@ -57,7 +54,6 @@ JOBS: dict[str, JobSpec] = {
                 "需已攒 fixture(故障注入现场用 scripts/eval_diagnosis.py snapshot 抓)"),
         JobSpec("calibrate-confidence", "置信度阈值校准", ("make", "calibrate-confidence"),
                 "需 Milvus + 已建库 + 重排上游,分钟级", heavy=True),
-        # ch10 分类器
         JobSpec("ch10-golden", "黄金样例闸", ("make", "ch10-golden"), "需聊天上游"),
         JobSpec("ch10-corpus", "语料流水线", ("make", "ch10-corpus"),
                 "需 mysql + 聊天上游", heavy=True),

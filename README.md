@@ -111,10 +111,3 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 | `tests`、`docs` | 功能验证与项目说明 |
 
 模块边界见 [docs/module-map.md](docs/module-map.md)，产品要求见 [docs/product-acceptance.md](docs/product-acceptance.md)。
-
-## 使用边界与来源
-
-- 诊断输出需结合证据和实际环境确认；功能存在不代表所有产品要求均已验证。
-- 历史评估文件只说明对应版本和数据集的结果，不能代替当前版本或客户环境的成绩。
-- `.env`、数据库、日志、模型产物和观测录制文件属于运行环境，不随源码发布。
-- 基础对话与知识检索结构参考《AI Agent 智能客服实战》配套实现；归因模块包含适配后的第三方 OpsAgent 代码。相关来源及授权说明随对应代码保留。

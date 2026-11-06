@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# ch02 验收演示:三条验收标准。需数据库 + make seed + make dev 就绪。
 set -euo pipefail
 BASE=http://localhost:8000
 

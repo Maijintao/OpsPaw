@@ -310,7 +310,6 @@
       }
     }
 
-    /* ---------- ch07:会话侧栏(多会话切换,验收长对话记忆用) ---------- */
     #sidebar {
       flex: none;
       width: 224px;
@@ -491,7 +490,6 @@
       margin: 6px 0; padding: 2px 10px; border-left: 3px solid var(--muted); color: var(--muted);
     }
 
-    /* ---------- ch04:可点引用角标 + 来源浮层 ---------- */
     .cite {
       cursor: pointer;
       color: var(--coral);
@@ -525,7 +523,6 @@
     .cite-pop-a { color: var(--ink); white-space: pre-wrap; word-break: break-word; }
     .cite-pop-meta { margin-top: 7px; font-size: 11px; color: var(--muted); }
 
-    /* ---------- ch04:每段回答满意度反馈(👍/👎) ---------- */
     .feedback { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
     .fb-btn {
       border: 2px solid var(--ink);
@@ -593,7 +590,6 @@
     .chip:hover { background: #ffedd6; }
     .chip:active { transform: translate(3px, 3px); box-shadow: none; }
 
-    /* ---------- ch05:actions 帧 - 转人工/建工单两独立按钮 ---------- */
     .action-bar { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
     .action-btn {
       border: 3px solid var(--ink);
@@ -683,7 +679,6 @@
     .diag-plan .tag.ok { background: var(--online); }
     .diag-plan .meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
 
-    /* ---------- ch05:建工单表单弹窗 ---------- */
     .modal-mask {
       position: fixed; inset: 0; z-index: 50;
       background: rgba(43, 38, 50, .45);
@@ -724,13 +719,11 @@
     .modal-actions .submit:hover:not(:disabled) { background: #ff6a45; }
     .modal-actions button:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }
     .modal-actions .submit:disabled { background: #e8dcc8; color: var(--muted); cursor: not-allowed; }
-    /* ch06:变更表单只读服务标识输入框(真实服务=服务名) */
     .ticket-field input {
       width: 100%; font-family: inherit; font-size: 13px; color: var(--muted);
       border: 3px solid var(--ink); background: #efe6d4;
       padding: 9px 10px; box-shadow: var(--shadow-sm);
     }
-    /* ch06:服务选择器卡片(interrupt 未锁定服务名时聊天流里点选) */
     .order-cards { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
     .order-card {
       text-align: left; border: 3px solid var(--ink); background: var(--cream);
@@ -745,7 +738,6 @@
     .order-card .oc-mid { font-size: 12.5px; margin-top: 2px; }
     .order-card .oc-bot { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 
-    /* ---------- ch08:工单预览确认卡(interrupt confirm_ticket) ---------- */
     .ticket-confirm {
       border: 3px solid var(--ink); background: var(--cream);
       padding: 10px 12px; margin-top: 10px; box-shadow: var(--shadow-sm);
@@ -1324,7 +1316,6 @@
       return out.join("");
     }
 
-    // ---------- ch04:引用角标 [n] → 可点,弹来源浮层(section_path + 原文) ----------
     let citePop = null;
     function ensureCitePop() {
       if (citePop) return citePop;
@@ -1393,7 +1384,6 @@
       }
     }
 
-    // ---------- ch04:每段回答满意度反馈(👍/👎,点一次点亮 + 已反馈,一次性)----------
     function addFeedbackBar(bubble) {
       if (bubble.querySelector(".feedback")) return;   // 防重复挂
       const bar = document.createElement("div");
@@ -1407,7 +1397,6 @@
       const done = document.createElement("span");
       done.className = "fb-done"; done.hidden = true; done.textContent = "已反馈,谢谢~";
       bar.append(up, down, done);
-      // ch09:向上找这条回答之前最近的用户气泡,把该轮用户原话带给后端(👎 落池要用)
       function userQuestionBefore() {
         let row = bubble.closest(".row");
         while (row && (row = row.previousElementSibling)) {
@@ -1424,7 +1413,6 @@
         up.remove(); down.remove();      // 收起两个按钮,只留一句已选择,不再悬在卡片中间
         done.hidden = false;
         done.textContent = "已选择 " + (chosen === up ? "👍" : "👎");
-        // ch09:反馈接后端——👎 落低置信度问题池进飞轮,👍 后端只记日志;失败静默,UI 行为不变
         fetch("/api/feedback", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ conversation_id: getConversationId(),
@@ -1437,15 +1425,12 @@
       bubble.appendChild(bar);
     }
 
-    // ---------- ch05:actions 帧 - 转人工值班/建工单两按钮交互 ----------
     // history=true 表示这批动作是从库里回载的:卡片要等状态拉回来再挂,别演一遍运行态
     function renderActions(bubble, items, history) {
       const bar = document.createElement("div");
       bar.className = "action-bar";
       for (const a of items) {
         if (a.type === "select_service") {
-          // ch08:报了接入平台里不存在/没对准的服务被拒,把发现的真实服务列出来点选。拒绝之后得给条出路,
-          // 否则值班同学既查不到,也不知道标准服务名是什么写法
           renderServiceCards(bubble, a.services || [], pickThenAsk);
           continue;
         }
@@ -1476,7 +1461,6 @@
           btn.addEventListener("click", () => openTicketModal(btn));
         } else if (a.type === "change_form") {
           btn.textContent = "提交变更申请";
-          // ch06:评估通过时 Agent 调 submit_change 被拦成此动作,点开变更表单(服务只读+类型下拉)
           btn.addEventListener("click", () => openChangeModal(btn, a.draft || {}));
         }
         bar.appendChild(btn);
@@ -2226,7 +2210,6 @@
       })();
     }
 
-    // ---------- ch05:建工单表单弹窗控制 ----------
     const ticketMask = document.getElementById("ticketMask");
     const ticketType = document.getElementById("ticketType");
     const ticketDesc = document.getElementById("ticketDesc");
@@ -2292,7 +2275,6 @@
       }
     });
 
-    // ---------- ch06:变更表单弹窗控制(服务只读 + 固定类目类型下拉)----------
     const changeMask = document.getElementById("changeMask");
     const changeService = document.getElementById("changeService");
     const changeType = document.getElementById("changeType");
@@ -2371,9 +2353,6 @@
       if (e.key === "Escape" && confirmMask.classList.contains("open")) settleConfirm(false);
     });
 
-    // ---------- ch06:服务选择器卡片(interrupt 未锁定服务名 → 聊天流点选 → resume 续跑)----------
-    // onPick 决定点完卡片干什么:ch06 是 resume 把图续跑下去;ch08 归属校验拒绝之后
-    // 没有待续跑的图,点了就当用户重新问一句(见 pickThenAsk)。卡片长相只此一份。
     function renderServiceCards(bubble, services, onPick) {
       const intro = document.createElement("div");
       intro.className = "bubble-text";
@@ -2402,7 +2381,6 @@
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
-    // ch06:点完续跑图(有 interrupt 挂着)
     async function pickThenResume(o) {
       // 服务身份是"平台+服务名":多平台同名时必须把全名回传,裸名会被后端拒绝(绝不猜平台)
       const sid = o.ambiguous ? o.key : o.service_id;
@@ -2422,7 +2400,6 @@
       }
     }
 
-    // ch08:归属校验拒绝之后给的出路。这轮已经答完了,没有图等着续跑,所以走正常发消息那条路
     async function pickThenAsk(o) {
       await send("查一下服务 " + o.service_id);
     }
@@ -2514,7 +2491,6 @@
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
-    // ---------- ch08:工单预览确认卡(interrupt confirm_ticket → 确认提交/取消 → resume 续跑)----------
     function renderTicketConfirm(bubble, preview) {
       const intro = document.createElement("div");
       intro.className = "bubble-text";
@@ -2679,7 +2655,6 @@
             bubble.querySelectorAll(".typing").forEach((n) => n.remove());
             structured = true;
           }
-          // ch08:中断按 kind 分发——select_service 弹服务卡,confirm_ticket 弹工单预览卡
           if (data.kind === "confirm_ticket") renderTicketConfirm(bubble, data.preview || {});
           if (data.kind === "confirm_intake") renderIntakeConfirm(bubble, data.preview || {});
           else renderServiceCards(bubble, data.services || []);
@@ -2717,7 +2692,6 @@
       }
     }
 
-    // ---------- ch07:会话侧栏(列表 / 切换 / 历史回载) ----------
     const convListEl = document.getElementById("conv-list");
 
     async function loadConversations() {
@@ -2756,7 +2730,6 @@
         b.type = "button";
         b.dataset.cid = it.id;
         b.className = "conv-item" + (it.id === current ? " active" : "");
-        // 主标题:后台生成的小标题优先,没有就回退首问截断;不显示预览小字(用户嫌突兀)
         const mainTitle = it.title || ((it.preview || "").slice(0, 14) || "新会话");
         b.innerHTML =
           '<div class="ci-top"><span class="ci-title"></span>' +
@@ -2790,9 +2763,6 @@
       }
     }
 
-    // 历史回载时补挂按钮:suggested_actions 不落库,但这两句话术是固定文案,
-    // 且转人工/建工单按钮不依赖当轮上下文(转人工纯前端模拟,建工单表单用户现填),
-    // 按文案精确匹配重建即可。话术改了这里要跟着改(单一来源在后端 prompts.py)。
     const REPLAY_ACTIONS = [
       { text: "非常抱歉给您带来了不好的体验,我理解您的心情。您可以选择联系二线值班,或让我为您登记一张工单跟进处理。",
         actions: [{ type: "transfer_human" }, { type: "create_ticket", draft: {} }] },

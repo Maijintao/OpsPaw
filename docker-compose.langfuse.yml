@@ -4,7 +4,6 @@
 # 基于官方 langfuse/langfuse docker-compose.yml,本仓库改动三处:
 #   1) LANGFUSE_INIT_* 填了默认值——headless 初始化,起来即有组织/项目/固定 key,免手工点界面
 #   2) minio 宿主端口 9091 → 9191(9091 被主 compose 的 milvus healthz 占用)
-#   3) 本机教学环境,CHANGEME 密钥保持默认;对外部署前必须全部换掉
 # =============================================================
 # Make sure to update the credential placeholders with your own secrets.
 # We mark them with # CHANGEME in the file below.
@@ -31,7 +30,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/postgres} # CHANGEME
       SALT: ${SALT:-mysalt} # CHANGEME
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000} # CHANGEME: generate via `openssl rand -hex 32`
-      TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-false}   # 本章立场「数据不出门」,遥测一并关掉
+      TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-false}
       LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: ${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
       CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL:-clickhouse://clickhouse:9000}
       CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}

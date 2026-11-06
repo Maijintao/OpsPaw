@@ -1,10 +1,5 @@
 """OpsAgent 适配层:OpsPaw 活数据 → OpsAgent 三 agent 协作 → 根因结论。
 
-OpsAgent(ASE Industry 2026,AIOpsLab 排行榜 78.75)的源码在 app/diagnosis/opsagent/
-原样保留,本适配层不修改其文件(唯一例外:utils/public_function.py 的 llm_invoke
-函数体从 transformers 本地推理改为项目统一的 OpenAI 兼容端点——权重不随仓库分发,
-这一处不换整条链跑不起来,签名与返回值保持不变)。
-
 适配职责:
 1. 活数据 → OpsAgent 期望的 DataFrame 形态:
    - metrics: {服务: pivot_df(index=秒级时间戳, columns=指标名)}(调用量/错误率/
@@ -14,7 +9,7 @@ OpsAgent(ASE Industry 2026,AIOpsLab 排行榜 78.75)的源码在 app/diagnosis/o
    - traces: span 级 DataFrame(timestamp_ms, duration, type, span_id, parent_id,
      cmdb_id)。
 2. 按 OpsAgent 自己的编排序列(process_task)驱动:AD/FT/RCL think → 两两
-   cross_review → refine → 汇总 final_answer。agents/prompts/utils 文件零改动。
+   cross_review → refine → 汇总 final_answer。
 3. 绕开 process_data(它只认 OPENRCA 的 CSV 目录),data_features 由本层用
    DataProcessor 的特征函数对活数据现算——这正是它"training-free 数据处理器"
    的设计意图:换系统不换处理器。
@@ -327,7 +322,7 @@ def attr_from_answers(answer_text: str, answers: list[str],
 def _stub_hf_model_loads():
     """OpsAgent 的 agent 初始化会 from_pretrained 本地 14B 权重(config 里是占位符
     "XXX",权重不随仓库分发),而 LLM 调用已桥接到 DeepSeek——model/tokenizer 参数
-    不会被消费。运行期把 HF 的两个加载入口 stub 成轻量桩,退出恢复;OpsAgent 文件零改动。"""
+    不会被消费。运行期把 HF 的两个加载入口 stub 成轻量桩,退出恢复。"""
     import transformers
     from types import SimpleNamespace
     orig_model = transformers.AutoModelForCausalLM.from_pretrained

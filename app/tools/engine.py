@@ -76,7 +76,6 @@ def _format_content(spec: ToolSpec, result) -> str:
 
 async def _audit(conversation_id, tool_call_id, name, spec: ToolSpec | None, args,
                  result_summary, status, error_message, retry_count, duration_ms) -> None:
-    # ch08 验收可观测(照 ch07 model_ctx 惯例):每次工具调用一行 tool_run,来源/Server/结局
     # tail -f log/app.log 直接看——"这次真走了 MCP"不用翻库
     logger.info("tool_run conv=%s tool=%s source=%s server=%s status=%s retry=%s duration_ms=%s%s",
                 conversation_id or "-", name,

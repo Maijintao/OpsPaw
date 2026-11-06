@@ -1,8 +1,3 @@
-"""监控指标 MCP Server(mock 数据,不接真实监控、不建表)。
-独立进程:uv run python mcp_servers/monitor_server.py
-提供 CPU / 内存使用率时序查询,数据按服务名+时间窗动态生成(CPU 呈爬坡曲线、内存线性上涨,
-便于演示「指标异常 → 定位服务」的排障链路)。
-实装 mcp==1.28.1:FastMCP(name, host=, port=) + run(transport="streamable-http"),路径默认 /mcp。"""
 import logging
 import random
 from datetime import datetime, timedelta
@@ -45,9 +40,6 @@ def _metrics(service_name: str, start_time: Optional[str], end_time: Optional[st
 
     while current <= end_dt and len(data_points) < 500:
         rng = random.Random(f"{metric}:{service_name}:{current.strftime('%Y-%m-%d %H:%M')}")
-        # A repeatable 30-minute incident window each hour for the demo service.
-        # The default one-hour query therefore normally includes both baseline
-        # and a rising segment, regardless of when the demo is run.
         incident = service_name == "data-sync-service" and 20 <= current.minute < 50
         if incident:
             progress = current.minute - 20

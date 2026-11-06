@@ -158,8 +158,6 @@ async def resolve_reference(state) -> dict:
     写 resolved_query,供 classify_intent 与 change_flow 检索共用(意图识别不再改写)。"""
     query = _user_text(state)
     history = _history_text(state)
-    # ch07 验收可观测:每轮必经此节点,摘要行+滑窗在这一条日志里直接可见
-    # (model_ctx 只在进 main_agent 的路由才有,闲聊/兜底路由靠这条看)
     logger.info("history_ctx conv=%s(摘要行+滑窗,coref/意图共用)\n%s",
                 state.get("conversation_id"), history or "(无历史)")
     resolved = await coref.resolve(query, history)

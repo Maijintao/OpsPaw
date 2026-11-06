@@ -31,7 +31,6 @@ def test_trim_noop_when_under_budget():
     assert trim_history(msgs, max_tokens=2000) == msgs
 
 
-# ---- ch07 锚点切窗 + 摘要注入 ----
 
 from langchain_core.messages import SystemMessage
 

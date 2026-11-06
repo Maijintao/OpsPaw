@@ -45,7 +45,6 @@ async def init_graph() -> None:
     checkpointer = await _cm.__aenter__()
     await checkpointer.setup()
     _checkpointer = checkpointer
-    # ch09:编译时挂一次 Langfuse 回调,全图自动 trace(未配置时原样返回,零依赖)
     _graph = attach_observability(build_graph(checkpointer=checkpointer))
     logger.info("图已编译,checkpointer=%s", settings.checkpointer_db_path)
 
@@ -126,7 +125,6 @@ def _graph_input(user_id: str, message: str, cid: int, msg_id: int,
     # 显式重置每轮的输出通道:checkpointer 按 thread_id 持久化 State,这些无 reducer 的标量
     # 会跨轮残留(如上一轮闲聊/投诉的 answer、建工单可选项串到本轮),须在入口清零。
     # messages 有 add_messages reducer(追加=跨轮历史),不清;steps/tokens_used 是本轮预算。
-    # ch07:用户消息带 db-{msg_id} 锚点(滑窗与摘要边界对齐);summary 两字段每轮从库刷新。
     return {"messages": [HumanMessage(message, id=f"db-{msg_id}")], "user_id": user_id,
             "conversation_id": cid, "steps": 0, "tokens_used": 0,
             "answer": "", "suggested_actions": [], "evidence": "",
@@ -150,7 +148,6 @@ async def run_turn(user_id, message, conversation_id) -> dict:
     """非流式:落 user 消息 → ainvoke → 返回终态(供 /api/agent、eval)。遇 interrupt 带 services。"""
     cid, summary, upto = await _ensure_conversation(user_id, conversation_id)
     msg_id = await repository.append_message(cid, "user", content=message)
-    # ch09:langfuse_session_id 让同一会话多轮在 Langfuse 界面串成一组(未挂回调时无害)
     config = {"configurable": {"thread_id": str(cid)},
               "metadata": {"langfuse_session_id": str(cid)}}
     final = await get_graph().ainvoke(
@@ -193,8 +190,6 @@ async def _stream_events(cid: int, stream_source) -> AsyncIterator[dict]:
             if "__interrupt__" in chunk:
                 payload = chunk["__interrupt__"][0].value
                 # 带上 conversation_id:中断时不发 done 帧,前端要靠这个才知道续跑用哪个会话。
-                # ch08:负载按中断类型透传(select_service 带 services,confirm_ticket 带 preview),
-                # 前端按 kind 分发。
                 ev = {"type": "interrupt", "kind": payload.get("type", ""), "conversation_id": cid}
                 for k in ("services", "preview"):
                     if payload.get(k) is not None:
@@ -212,7 +207,6 @@ async def _stream_events(cid: int, stream_source) -> AsyncIterator[dict]:
                     for m in upd.get("messages", []):
                         name = getattr(m, "name", None)
                         # submit_change 仍是「拦成前端表单」的合成消息,不发工具帧;
-                        # create_ticket ch08 起确认后真执行,照常发帧
                         if name and name != "submit_change":
                             yield {"type": "tool", "name": name}
                 if upd.get("suggested_actions"):

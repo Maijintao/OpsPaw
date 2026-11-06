@@ -10,8 +10,6 @@ from scripts.ch10.corpus_lib import split_dataset
 
 SRC = pathlib.Path("data/ch10/corpus_labeled.jsonl")
 OUT = pathlib.Path("data/ch10/dataset")
-# 第一版评估翻车的定向补数:光杆「挂了咋整」类短句(无服务名/无「宕机」等类目字眼)
-# 训练覆盖不足,类目打不出来;只补训练集,考题不动
 SUPPLEMENT = pathlib.Path(__file__).parent / "supplement_bare.jsonl"
 
 AUGMENT_PROMPT = """把下面这句运维值班用户问题改写一个变体:换同义词、微调句式(比如改成「我想问一下……」的口气),

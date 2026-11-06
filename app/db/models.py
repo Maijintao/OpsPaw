@@ -130,7 +130,6 @@ class LowConfidenceQuestion(Base):
     raw_question: Mapped[str] = mapped_column(Text)
     source: Mapped[str] = mapped_column(Enum("retrieval_low_conf", "self_check", "user_feedback"))
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # ch09 落池时召回快照。none_as_null=True:Python None 存 SQL NULL 而非 JSON null
     # (默认 False 会把 None 写成 JSON 'null',IS NOT NULL 判真、语义全乱,实测踩坑)
     retrieved_chunks: Mapped[list | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     matched_review_id: Mapped[int | None] = mapped_column(
