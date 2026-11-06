@@ -69,7 +69,10 @@ def severity(d: ServiceDeviation, ref_count: int,
         # 同一条道理,不另立阈值:全部 = 事实,不是"比例很高"。
         # 实测(2026-10-17):payment 挂掉时 checkout 错误率 10.8%、payment 26.4%,
         # 排序按"离症状近"把 checkout 排前,LLM 也停在 checkout 上——真凶是下游的 payment。
-        return (3 if error_relay else 1), d.error_dev
+        if d.error_rate > 0 or ref_count or error_relay:
+            if not error_relay and "latency" in dims and not d.self_latency_abnormal:
+                return 3, d.error_dev
+            return (3 if error_relay else 1), d.error_dev
     if "latency" in dims:
         return (2, d.latency_dev) if d.self_latency_abnormal else (3, d.latency_dev)
     if "cpu" in dims or "mem" in dims:
@@ -286,6 +289,8 @@ def localize(graph: ServiceGraph, devs: dict[str, ServiceDeviation], symptom: st
              forced_extra: list | None = None,
              if_events: list[dict] | None = None,
              symptom_tier: int | None = None,
+             symptom_blamed_strong: bool | None = None,
+             symptom_blame_stream_only: bool = False,
              edge_blames: list | None = None,
              flag_changes: list | None = None) -> dict:
     """从症状服务提 ±2 跳异常子图,按严重层级排序候选,给 Top-K 候选+证据包。
@@ -519,7 +524,9 @@ def localize(graph: ServiceGraph, devs: dict[str, ServiceDeviation], symptom: st
                 d.abnormal_dims.add("shadow")
         # 纯调用方(只出不进)不可能是根因:它报错只能是别人坏了的传导。
         # 这条比"锚点免检"更优先——锚点也可能是压测机(2026-10-26 cartFailure 实测)。
-        if svc != symptom and _is_pure_caller(svc):
+        _own_hard = (d.self_latency_abnormal or "cpu" in d.abnormal_dims
+                     or "mem" in d.abnormal_dims)
+        if svc != symptom and _is_pure_caller(svc) and not _own_hard:
             continue
         if not d.abnormal and direction not in ("error_ref", "scan_anchor",
                                                 "edge_blame", "change") \
@@ -572,8 +579,10 @@ def localize(graph: ServiceGraph, devs: dict[str, ServiceDeviation], symptom: st
             # 被单个调用方的慢性流错误点名,不该只凭指认登顶(2026-10-25 夜跑
             # 教训);其余 tier(重启/自身报错/塌陷/资源)是自身实锤,照常兑换。
             _st = _SCAN_TIER_TO_LOCALIZE.get(int(symptom_tier), tier)
-            if int(symptom_tier) != 1 or _corroborated(svc, d):
-                tier = min(tier, _st)
+            _scan_blame_holds = bool(symptom_blamed_strong) and not symptom_blame_stream_only
+            if not d.abnormal:
+                if int(symptom_tier) != 1 or _corroborated(svc, d) or _scan_blame_holds:
+                    tier = min(tier, _st)
         if not d.abnormal and direction == "scan_anchor" and svc in extra_tiers:
             # 自身无异常维的粗筛锚点:层级用粗筛给的,按两套层级表的语义换算
             # (detect.TIER_* 与本函数 severity 的 docstring 一一对得上):

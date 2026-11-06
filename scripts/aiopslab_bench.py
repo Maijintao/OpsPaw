@@ -758,8 +758,7 @@ async def cmd_run(args) -> None:
                     _injected.append((c0["group"], t_inject))
                 except Exception as exc:  # noqa: BLE001  登记是增强,失败不挡跑批
                     print(f"  ⚠️ 注入窗登记失败(下一轮基线可能被污染):{exc}")
-                print(f"  等 {_settle}s 让故障在遥测里显形(需盖住 300s 判据窗)…",
-                      flush=True)
+                print(f"  等 {_settle}s 让故障填满判据窗…", flush=True)
                 await asyncio.sleep(_settle)
 
             # 判分前先量一下"这题到底有没有造出可观测故障"

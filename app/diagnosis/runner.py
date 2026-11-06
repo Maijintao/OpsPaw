@@ -40,6 +40,27 @@ _SEM = asyncio.Semaphore(MAX_CONCURRENT_DIAGNOSES)
 # 典型值估不准,宁缺勿错(不判)。
 HANG_MIN_HISTORY = stats.min_samples_for_median()
 
+_WEAK_TIER = 5
+
+
+def demote_weak_root(attr, cands: list[dict]) -> bool:
+    if attr.verdict != "root_cause" or not attr.root_cause_service:
+        return False
+    chosen = next((c for c in cands if c["service"] == attr.root_cause_service), None)
+    if chosen is None or int(chosen.get("tier", 0)) < _WEAK_TIER:
+        return False
+    weak = attr.root_cause_service
+    attr.verdict = "inconclusive"
+    attr.root_cause_service = None
+    attr.confidence_note = (
+        f"{weak} 只有「其他异常」级证据(错误/时延/资源都没有实锤),不构成根因结论"
+        + (f";原归因说明:{attr.confidence_note}" if attr.confidence_note else ""))
+    attr.missing = list(attr.missing) + [
+        f"候选 {weak} 没有任何实锤维度,结论停在「证据不足」而非「根因」"]
+    attr.suggested_actions = list(attr.suggested_actions) + [
+        f"复核 {weak} 本次窗口内的异常是否只是背景噪声"]
+    return True
+
 
 def _target_silence(spans: list, service: str, window_end: float) -> dict | None:
     """目标服务是否已停止出遥测(疑似挂死):自身最新 span 距今超过
@@ -616,6 +637,10 @@ async def _run(run: dict, service: str, symptom: str,
                             span_profiles=_profiles, forced_extra=_extra_anchors,
                             if_events=if_events,
                             symptom_tier=((detect_info or {}).get("anchors") or [{}])[0].get("tier"),
+                            symptom_blamed_strong=((detect_info or {}).get("anchors")
+                                                   or [{}])[0].get("blamed_strong"),
+                            symptom_blame_stream_only=bool(((detect_info or {}).get("anchors")
+                                                            or [{}])[0].get("blame_stream_only")),
                             edge_blames=_edge_blames, flag_changes=_flag_changes)
     cands = loc["candidates"]
     target_has_confirmed_issue = bool(target_dev and target_dev.abnormal)
@@ -868,6 +893,7 @@ async def _run(run: dict, service: str, symptom: str,
             answer_text, answers, cands, service,
             services_all={sp.service for sp in spans} | set(graph.nodes),
             abnormal={s for s, d in devs.items() if d.abnormal})
+    demote_weak_root(attr, cands)
     passed = bool(attr.root_cause_service or attr.verdict == "inconclusive")
     _emit(run, "attribute", f"归因结论:{attr.verdict}"
                             f"{(' → ' + attr.root_cause_service) if attr.root_cause_service else ''}")

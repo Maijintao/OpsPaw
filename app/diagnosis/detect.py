@@ -389,6 +389,7 @@ async def _error_refs(prom: dict, info: dict, known: set[str],
     for s in all_res:
         m = s["metric"]
         op_total[(m.get(info["service_label"], "?"), m.get("span_name", ""))] = float(s["value"][1])
+    from app.diagnosis.deviation import is_streaming_span
     out: dict[str, dict] = {}
     for s in err_res:
         caller = s["metric"].get(info["service_label"], "?")
@@ -408,9 +409,10 @@ async def _error_refs(prom: dict, info: dict, known: set[str],
             continue      # 慢性背景错误:最近这一小时一直这么失败,不是本次新故障
         total = op_total.get((caller, op), 0.0)
         ratio = (err_rate / total) if total > 0 else 0.0
-        prev = out.get(callee)
-        out[callee] = {"rate": (prev or {}).get("rate", 0.0) + err_rate,
-                       "ratio": max((prev or {}).get("ratio", 0.0), ratio)}
+        prev = out.get(callee) or {}
+        out[callee] = {"rate": prev.get("rate", 0.0) + err_rate,
+                       "ratio": max(prev.get("ratio", 0.0), ratio),
+                       "stream_only": bool(prev.get("stream_only", True)) and is_streaming_span(op)}
     return out
 
 
@@ -1275,6 +1277,8 @@ async def scan_one(prom: dict, *, platform: str, cluster: str = "",
             "silent": dev["calls"].abnormal,
             "state_change": state_change, "blamed": round(blamed, 4),
             "blamed_strong": blamed_strong,
+            "blame_stream_only": bool(blamed_info.get("stream_only"))
+            if isinstance(blamed_info, dict) else False,
             "dev": {k: {"position": d.position, "ratio": d.ratio,
                         "abnormal": d.abnormal} for k, d in dev.items()},
             "reasons": reasons,
